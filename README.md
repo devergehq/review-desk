@@ -1021,17 +1021,47 @@ judging them.**
 | The pull request was merged or closed | The pull request | `pr_state` and `pr_state_at` on the review |
 | Someone replied to a finding | The finding's comment thread | An outcome of kind `replied`, with the author and the verbatim text |
 | A finding's thread was resolved | The thread's resolved flag | An outcome of kind `thread_resolved` |
-| The file a finding points at changed later | A comparison of the reviewed commit with the current head | An outcome of kind `code_changed_after`, with the commit and whether the finding's own lines changed |
+| The file a finding points at changed later | The file's contents at the posted commit and at the current head | An outcome of kind `code_changed_after`, with the commit, whether the finding's own lines changed, and how that was decided |
+| Whether it changed could not be known | The same reads, failing in a way that will not change by asking again | An outcome of kind `code_change_unknown`, with the reason |
 
 It does **not** decide whether a reply accepted or rejected a finding. That needs
 judgement; this command is deterministic. The reply is stored as written, and a person
 or an agent reads it later.
 
-A finding's own lines are "changed" when they were removed or replaced. Inserting lines
-above a finding moves it without changing it, so that is recorded as the file changing
-and not the finding's lines. A finding with no line number, or pointing at a file no
-later commit touched, is treated the same way: the record says what changed, not what it
-meant.
+A finding's own lines are "changed" when the seven lines around it at the posted commit no
+longer stand together anywhere in the later file. Inserting lines above a finding moves it
+without changing it, so that is recorded as the file changing and not the finding's lines.
+A finding with no line number is treated the same way: the record says what changed, not
+what it meant.
+
+### How a code change is answered
+
+**From the files' contents, not from a comparison of the two commits** (DEV-1344). After a
+rebase or a force-push, `compare(posted...head)` carries upstream commits and base-branch
+merges, and past 300 files GitHub cuts its list short; reading every file in it as the
+author's credited authors with upstream work on 79 of 268 reviewed pull requests.
+`crates/harvest/src/change.rs` holds the method:
+
+| Question | Answered by | A comparison is trusted only when |
+| -- | -- | -- |
+| Which files are the pull request's own? | `compare(base...head)`, three dots | under 300 files, and its line total equals GitHub's own count for the pull request |
+| Did the finding's file change? | git blob ids at the posted commit and the head, for the pull request's own files only | never; the posted→head comparison, when `identical` or `ahead` with no merges, under 250 commits and under 300 files, only names which commit did it |
+| Did the finding's lines change? | the 7 lines around it at the posted commit, searched for in the later file, whitespace-trimmed | never |
+
+* **The baseline is the commit the review was posted on**: the commit the finding's comment
+  was posted on (GitHub's `original_commit_id`), or the record's `head_sha` for a desk post.
+  A commit made between reading and posting is never credited to the author.
+* **A file the pull request does not change** is not recorded at all, whatever upstream did
+  to it. The run counts these as `code_not_the_pull_requests`.
+* **"Not known" is recorded as `code_change_unknown`, never as nothing.** Its `reason` is
+  `history_rewritten` (the posted commit is gone from GitHub), `own_files_unverified`,
+  `not_after` (the head is behind the posted commit) or `not_in_posted_commit`. Step 7 and
+  the review's page draw it as "—" with the reason. The inbox never lists it, because it is
+  nobody's act.
+* **A read that failed for this run only** — rate-limited, refused, unreadable — is counted
+  as `code_unknown_this_run` and not stored, so the next harvest asks again.
+* Both kinds carry `method`, `checks_run`, `checks_passed` and `method_version` in their
+  detail: how the figure was reached, how many of that method's checks ran, and how many held.
 
 ### What it needs, and what it skips
 

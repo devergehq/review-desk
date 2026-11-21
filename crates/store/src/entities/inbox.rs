@@ -236,6 +236,16 @@ macro_rules! compared_to {
     };
 }
 
+/// **What the harvester could not answer is not activity**, as a SQL predicate over an
+/// outcome aliased `o`. DEV-1344.
+///
+/// `code_change_unknown` is the harvester's, like a code change, so the `actor IN (author,
+/// harvester)` both queries below ask would otherwise list it — and the queue would draw
+/// "the author did something" about a finding whose reviewed commit is simply gone from
+/// GitHub. That is the very misreading DEV-1344 exists to stop. The kind is a literal for
+/// the reason [`ALREADY_REVIEWED`]'s is, and a test below ties it to [`OutcomeKind`].
+pub(super) const NOT_AN_ACT: &str = "o.kind <> 'code_change_unknown'";
+
 /// **Whether a later posted round of the same pull request has already answered this
 /// outcome**, as a SQL predicate over an outcome aliased `o` and its own review aliased
 /// `v`.
@@ -515,6 +525,7 @@ impl Store {
                    WHERE o.review_id = v.id
                      AND o.actor IN (?2, ?3)
                      AND (?4 IS NULL OR o.occurred_at >= ?4)
+                     AND {NOT_AN_ACT}
                      AND NOT ({ALREADY_REVIEWED})
                )
              ORDER BY v.id DESC"
@@ -559,6 +570,7 @@ impl Store {
              JOIN reviews v ON v.id = o.review_id
              WHERE o.review_id = ?1
                AND o.actor IN (?2, ?3)
+               AND {NOT_AN_ACT}
                AND NOT ({ALREADY_REVIEWED})
              ORDER BY o.finding_seq ASC, o.occurred_at ASC, o.id ASC"
         ))?;
@@ -1185,6 +1197,16 @@ mod tests {
     /// SQL compiling and matching nothing, which is this whole change quietly undone with
     /// no test failing. The same argument, and the same remedy, as
     /// [`the_words_in_the_finished_clause_are_the_settled_states`].
+    /// The kind [`NOT_AN_ACT`] keeps out of the queue is the one the harvester writes when
+    /// it cannot answer, and no other. DEV-1344.
+    #[test]
+    fn the_kind_kept_out_of_author_activity_is_the_unknown_one() {
+        assert_eq!(
+            NOT_AN_ACT,
+            format!("o.kind <> '{}'", OutcomeKind::CodeChangeUnknown.as_str())
+        );
+    }
+
     #[test]
     fn the_kind_the_already_reviewed_clause_names_is_the_one_the_harvester_writes() {
         assert!(

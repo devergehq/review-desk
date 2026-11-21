@@ -96,6 +96,23 @@ const CODE_CHANGED = JSON.stringify({
   file_status: 'modified',
   commit: '65eff6321a04f7b9c0d8e5a1b2c3d4e5f6071829',
   basis: 'compare 633e04a3f...65eff6321',
+  method: 'blob_sha+content_window',
+  checks_run: 7,
+  checks_passed: 7,
+  method_version: 1,
+})
+
+/** A `code_change_unknown` detail, as `harvest_code_changes` writes one. DEV-1344. */
+const UNKNOWN = JSON.stringify({
+  file: 'app/Reporting/ColumnPolicy.php',
+  line: 93,
+  reason: 'history_rewritten',
+  basis: 'compare 633e04a3f...65eff6321',
+  method: 'blob_sha',
+  checks_run: 6,
+  checks_passed: 5,
+  method_version: 1,
+  time_basis: 'observed',
 })
 
 /* ------------------------- the detail is never printed ------------------------- */
@@ -159,16 +176,18 @@ describe('a stored detail that is a record is never printed', () => {
     const details = [...rust.matchAll(/let detail = json!\(\{([^}]*)\}\)/g)]
     expect(
       details.length,
-      'crates/harvest/src/run.rs no longer composes three details with json!',
-    ).toBe(3)
+      'crates/harvest/src/run.rs no longer composes four details with json!',
+    ).toBe(4)
 
     const fields = new Set(
       details.flatMap(block => [...block[1]!.matchAll(/"([a-z_]+)":/g)].map(hit => hit[1]!)),
     )
-    /* The three shapes between them, which is what the module's own table claims. */
+    /* The four shapes between them, which is what the module's own table claims. */
     expect([...fields].sort()).toEqual([
       'basis',
       'body',
+      'checks_passed',
+      'checks_run',
       'comment_id',
       'commit',
       'file',
@@ -177,6 +196,9 @@ describe('a stored detail that is a record is never printed', () => {
       'line',
       'lines_changed',
       'login',
+      'method',
+      'method_version',
+      'reason',
       'resolved_by',
       'thread',
       'time_basis',
@@ -200,13 +222,40 @@ describe('a stored detail that is a record is never printed', () => {
    * of `outcomeSaid` exists for.
    */
   it.each(KINDS)('%s composes a sentence with no brace in it', (kind) => {
-    for (const detail of [REPLIED, RESOLVED, CODE_CHANGED, '{"anything":"at all"}']) {
+    for (const detail of [REPLIED, RESOLVED, CODE_CHANGED, UNKNOWN, '{"anything":"at all"}']) {
       const said = outcomeSaid({ kind, detail, actor: 'author' })
       expect(said.sentence.length, `${kind} said nothing`).toBeGreaterThan(0)
       expect(said.sentence, `${kind} printed its detail`).not.toContain('{')
       expect(said.sentence).not.toContain('"')
       expect(outcomeLine({ kind, detail, finding_key: 'F10' })).not.toContain('{')
     }
+  })
+})
+
+/* ------------------------ a code change nobody could know ------------------------ */
+
+describe('a code change that could not be known reads as a dash and its reason', () => {
+  it('starts with "—" and says why, never "unchanged" and never a nought', () => {
+    const said = outcomeSaid({ kind: 'code_change_unknown', detail: UNKNOWN, actor: 'harvester' })
+    expect(said.sentence).toBe(
+      '— whether the code it points at changed is not known: the commit it was posted on is '
+      + 'no longer on GitHub — the history was rewritten',
+    )
+    expect(said.sentence).not.toMatch(/unchanged|\b0\b/)
+    expect(said.commit).toBeNull()
+    expect(said.file).toBe('app/Reporting/ColumnPolicy.php')
+    expect(said.observed).toBe(true)
+  })
+
+  it('keeps the dash for a reason this build has not heard of, without printing it', () => {
+    const detail = JSON.stringify({ reason: 'a_reason_from_later', file: 'a.php' })
+    const said = outcomeSaid({ kind: 'code_change_unknown', detail, actor: 'harvester' })
+    expect(said.sentence).toBe('— whether the code it points at changed is not known')
+  })
+
+  it('leaves the method fields out of the code change it rides on', () => {
+    const said = outcomeSaid({ kind: 'code_changed_after', detail: CODE_CHANGED, actor: 'harvester' })
+    expect(said.sentence).toBe('the code at line 93 changed in 65eff63')
   })
 })
 

@@ -10,7 +10,7 @@ use std::ffi::{OsStr, OsString};
 use std::process::Command;
 
 use crate::error::{HarvestError, Result};
-use crate::github::{CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
+use crate::github::{BlobAt, CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
 use crate::wire;
 
 /// A thread's resolved flag exists only in GraphQL; the REST comments endpoint has no
@@ -24,11 +24,26 @@ query($owner: String!, $name: String!, $number: Int!) {
           isResolved
           resolvedBy { login }
           comments(first: 100) {
-            nodes { databaseId author { login } body createdAt }
+            nodes { databaseId author { login } body createdAt originalCommit { oid } }
           }
         }
       }
     }
+  }
+}";
+
+/// One file at one commit, and whether the commit is there at all. DEV-1344.
+///
+/// `object(expression:)` answers `null` both for a commit GitHub no longer has and for a
+/// path the commit does not hold, so the commit is asked for on its own beside it. A blob's
+/// `oid` is git's own blob SHA — equal contents, equal id — which is what "did this file
+/// change" is answered from. Read per repository rather than from a search, which came
+/// back incomplete on 150 of 269 pull requests in the exploration behind this.
+const BLOB_QUERY: &str = "\
+query($owner: String!, $name: String!, $commit: String!, $file: String!) {
+  repository(owner: $owner, name: $name) {
+    commit: object(expression: $commit) { oid }
+    file: object(expression: $file) { ... on Blob { oid text isBinary isTruncated } }
   }
 }";
 
@@ -132,6 +147,26 @@ impl GitHub for Gh {
 
     fn commit(&self, repo: &str, sha: &str) -> Result<CommitFiles> {
         wire::commit(&self.run(["api", &format!("repos/{repo}/commits/{sha}")])?)
+    }
+
+    fn blob(&self, repo: &str, commit: &str, path: &str) -> Result<BlobAt> {
+        let (owner, name) = split_repo(repo);
+        wire::blob(&self.run([
+            "api",
+            "graphql",
+            "-f",
+            &format!("query={BLOB_QUERY}"),
+            "-F",
+            &format!("owner={owner}"),
+            "-F",
+            &format!("name={name}"),
+            // `-f`, not `-F`: these are strings whatever they look like, and `-F` would
+            // read an all-digit abbreviated sha as a number.
+            "-f",
+            &format!("commit={commit}"),
+            "-f",
+            &format!("file={commit}:{path}"),
+        ])?)
     }
 }
 

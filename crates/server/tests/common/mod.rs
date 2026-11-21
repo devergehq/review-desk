@@ -106,6 +106,16 @@ impl<G: GitHub> GitHub for Counted<G> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.inner.commit(repo, sha)
     }
+
+    fn blob(
+        &self,
+        repo: &str,
+        commit: &str,
+        path: &str,
+    ) -> review_desk_harvest::Result<review_desk_harvest::BlobAt> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.inner.blob(repo, commit, path)
+    }
 }
 
 /// A running server, its database, and the directory both die with.

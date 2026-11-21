@@ -435,7 +435,7 @@ export function descriptionLintLabel(lint: DescriptionLint | null | undefined): 
 /**
  * What an outcome kind is called in a sentence about one finding.
  *
- * **All eleven of them, which is the drift DEV-862 closed.** `replied` and `thread_resolved`
+ * **All twelve of them, which is the drift DEV-862 closed.** `replied` and `thread_resolved`
  * are what the harvester writes — a reply on a finding's comment thread, and that thread
  * being resolved — and this map had neither, so the One review screen printed the raw wire
  * string for the two kinds it is most likely to be showing. The map is keyed by
@@ -469,6 +469,7 @@ const VERBS: Record<OutcomeKind, string> = {
   replied: 'Replied to',
   thread_resolved: 'Resolved the thread on',
   code_changed_after: 'Code changed after',
+  code_change_unknown: 'Code change not known after',
 }
 
 /**

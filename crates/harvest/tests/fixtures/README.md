@@ -31,6 +31,9 @@ and will not be next week.
 | `review_threads.json` | `gh api graphql -f query='…reviewThreads(first:50){nodes{isResolved resolvedBy{login} comments(first:20){nodes{databaseId author{login} body createdAt}}}}…'` |
 | `compare.json` | `gh api repos/devergehq/locus/compare/9535132…...46f6ea1… \| jq '{status, ahead_by, total_commits, commits: [.commits[] \| {sha, commit: {committer: {date: .commit.committer.date}}}], files: [.files[] \| {filename, status, patch}]}'` |
 | `commit-SHA.json` | `gh api repos/devergehq/locus/commits/SHA \| jq '{sha, commit: {committer: {date: .commit.committer.date}}, files: [.files[] \| {filename}]}'` |
+| `pull_request.json`, again | re-captured on 21 November 2026 for DEV-1344 with `base: {sha: .base.sha}` added to the `jq` above; nothing else in it changed |
+| `compare-bfdb515.json` | `gh api repos/devergehq/locus/compare/bfdb515…...46f6ea1… \| jq '{status, total_commits, files: [.files[] \| {filename, status, changes, previous_filename}]}'` — the pull request's own files, read from its base (DEV-1344) |
+| `blob-SHA-PATH.json` | `gh api graphql` with `BLOB_QUERY` from `crates/harvest/src/gh.rs`, `-f commit=SHA -f file=SHA:PATH`, for both findings' files at both commits (DEV-1344); `/` in the path is written `_` |
 
 The reviewed commit is `953513212a0e1400d7911b204150585661f5aab1` — the
 `original_commit_id` the review comments are anchored to — and the pull request's head
@@ -46,4 +49,8 @@ The tests lean on these, so they are worth stating:
 | Line 873 | Untouched — a finding there has had **only the file** change around it |
 
 `skills/dispatcher/workers/implement.md` has a review thread but does not appear in the
-comparison at all: a finding there gets no `code_changed_after` outcome.
+comparison at all: a finding there gets no `code_changed_after` outcome. Since DEV-1344 that
+is answered from its blob, which is `d87196f` at both commits.
+
+`pull_request-open.json` carries the same `base` as `pull_request.json`, so the open
+recording answers the own-files question the same way.

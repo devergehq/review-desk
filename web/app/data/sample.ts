@@ -588,7 +588,14 @@ function alreadyAnswered(detail: ReviewDetail, outcome: Outcome): boolean {
  */
 function stillWaiting(detail: ReviewDetail): Outcome[] {
   return detail.outcomes.filter(
-    outcome => outcome.actor !== 'developer' && !alreadyReviewed(detail, outcome),
+    outcome => outcome.actor !== 'developer'
+      /*
+       * DEV-1344: what the harvester could not answer is not an act of anybody's, and the
+       * store keeps it out with `NOT_AN_ACT`. Listed here, it would draw "the author did
+       * something" about a finding whose reviewed commit is simply gone from GitHub.
+       */
+      && outcome.kind !== 'code_change_unknown'
+      && !alreadyReviewed(detail, outcome),
   )
 }
 

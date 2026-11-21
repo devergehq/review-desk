@@ -109,6 +109,17 @@ interface HarvestFacts {
   /** `code_changed_after` — the commit the change was seen in, and the comparison behind it. */
   commit?: unknown
   basis?: unknown
+  /** `code_change_unknown` — why whether the code changed could not be known. DEV-1344. */
+  reason?: unknown
+  /**
+   * `code_changed_after` and `code_change_unknown` — how the answer was reached, and how
+   * many of that method's checks ran and held. A record of the method, for a reader who
+   * asks how a figure was reached; no sentence here is composed from them.
+   */
+  method?: unknown
+  checks_run?: unknown
+  checks_passed?: unknown
+  method_version?: unknown
   /**
    * Whether the time recorded is when the thing happened or when the harvester saw it.
    *
@@ -292,6 +303,7 @@ const SAID: Record<OutcomeKind, string> = {
   replied: 'replied to',
   thread_resolved: 'its thread resolved',
   code_changed_after: 'the code it points at changed afterwards',
+  code_change_unknown: '— whether the code it points at changed is not known',
 }
 
 /**
@@ -418,6 +430,7 @@ function saidOfCodeChange(held: HarvestFacts): OutcomeSaid {
   })
 
   if (removed) return said(`the file it points at was removed${inCommit}`)
+  if (text(held.file_status) === 'renamed') return said(`the file it points at was renamed${inCommit}`)
   if (line == null) return said(`the file it points at changed${inCommit}`)
   if (held.lines_changed === true) return said(`the code at line ${line} changed${inCommit}`)
   /*
@@ -430,6 +443,42 @@ function saidOfCodeChange(held: HarvestFacts): OutcomeSaid {
    */
   if (held.lines_changed === false) return said(`the file changed${inCommit}, but not line ${line}`)
   return said(`the file it points at changed${inCommit}`)
+}
+
+/**
+ * Why the harvester could not say whether a finding's code changed, in words. DEV-1344.
+ *
+ * Keyed by the `reason` `crates/harvest/src/change.rs` writes. A reason this build has
+ * not heard of keeps the dash and says less, rather than printing the stored word.
+ */
+const UNKNOWN_BECAUSE: Record<string, string> = {
+  history_rewritten: 'the commit it was posted on is no longer on GitHub — the history was rewritten',
+  own_files_unverified: 'which files are the pull request’s own could not be confirmed',
+  not_after: 'the pull request’s head is now behind the commit it was posted on',
+  not_in_posted_commit: 'the commit it was posted on holds no file at that path',
+}
+
+/**
+ * **"—", then the reason, and never "unchanged" or a nought.** A code change the record
+ * could not establish is not a code change that did not happen: after a force-push the
+ * commit a review was posted on can be gone from GitHub, and a sentence saying nothing
+ * changed would be a claim nobody checked.
+ */
+function saidOfUnknownChange(held: HarvestFacts): OutcomeSaid {
+  const reason = text(held.reason)
+  const because = reason == null ? undefined : UNKNOWN_BECAUSE[reason]
+  return {
+    sentence: because == null
+      ? SAID.code_change_unknown
+      : `${SAID.code_change_unknown}: ${because}`,
+    quote: null,
+    by: null,
+    commit: null,
+    file: text(held.file),
+    // The harvester writes `time_basis: "observed"`: this is when it looked, not when
+    // anything happened.
+    observed: text(held.time_basis) === 'observed',
+  }
 }
 
 /**
@@ -448,6 +497,7 @@ export function outcomeSaid(outcome: OutcomeLike): OutcomeSaid {
       case 'replied': return saidOfReply(held, outcome.actor)
       case 'thread_resolved': return saidOfResolution(held, outcome.actor)
       case 'code_changed_after': return saidOfCodeChange(held)
+      case 'code_change_unknown': return saidOfUnknownChange(held)
       /*
        * A kind the developer writes, whose detail somebody stored as JSON. The fields mean
        * nothing here, so the kind's phrase is the whole answer — which is the rule holding:
@@ -595,6 +645,11 @@ const HEADLINE: Record<OutcomeKind, (key: string) => string> = {
   replied: key => `The author replied to ${key}`,
   thread_resolved: key => `The author resolved ${key}’s thread`,
   code_changed_after: key => `The code under ${key} changed`,
+  /*
+   * Never in the queue — `Store::author_activity` keeps it out, because it is not something
+   * the author did — and worded anyway, because a `Record` must be whole.
+   */
+  code_change_unknown: key => `Whether the code under ${key} changed is not known`,
   rejected: key => `${key} was rejected, with a reason`,
   raised_again: key => `${key} was raised again`,
   cut: key => `${key} was cut from this round`,
@@ -621,6 +676,7 @@ const ACTION: Record<OutcomeKind, string> = {
   replied: 'Read the reply',
   thread_resolved: 'Read the thread',
   code_changed_after: 'See what changed',
+  code_change_unknown: 'Read what came back',
   rejected: 'Read their reason',
   raised_again: 'Read what came back',
   cut: 'Read what came back',

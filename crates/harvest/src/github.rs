@@ -33,6 +33,12 @@ pub struct PullRequest {
     pub state_at: Option<Timestamp>,
     /// The head commit the pull request is at now, which may be past the one reviewed.
     pub head_sha: String,
+    /// The commit the pull request's base branch is at now.
+    ///
+    /// What `compare(base...head)` is read from to say which files are the pull request's
+    /// own (DEV-1344). `None` for a response captured before it was read, which leaves
+    /// that question unanswered rather than answered from the wrong range.
+    pub base_sha: Option<String>,
     /// Who opened it. Used only to tell the author's reply from anyone else's.
     pub author: Option<String>,
     /// The pull request's title, as GitHub has it.
@@ -60,6 +66,11 @@ pub struct ReviewThread {
     pub resolved_by: Option<String>,
     /// Every comment after the first, oldest first.
     pub replies: Vec<Reply>,
+    /// The commit the thread's first comment was posted on — GitHub's
+    /// `original_commit_id`. DEV-1344: the baseline a later code change is measured from,
+    /// so that a commit made between reading and posting is never credited to the author.
+    /// `None` for a response captured before it was read.
+    pub original_commit: Option<String>,
 }
 
 /// One reply in a thread, kept exactly as it was written.
@@ -101,6 +112,9 @@ impl Comparison {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commit {
     pub sha: String,
+    /// Whether the commit has more than one parent: a merge, which is how base-branch
+    /// work arrives in a range. `false` for a response that carried no parents.
+    pub is_merge: bool,
     pub committed_at: Option<Timestamp>,
     /// The commit message's first line, as GitHub sent it.
     ///
@@ -117,6 +131,11 @@ pub struct ChangedFile {
     pub path: String,
     /// GitHub's word for what happened to it: `modified`, `added`, `removed`, …
     pub status: String,
+    /// Where it was before, when GitHub reports it `renamed`.
+    pub previous_path: Option<String>,
+    /// Additions plus deletions in this file, as GitHub counts them. `None` when the
+    /// response carried no count.
+    pub changes: Option<i64>,
     /// The line numbers **in the reviewed commit** whose content is gone: removed, or
     /// replaced. A finding pointing at one of these has had its own lines changed; a
     /// finding elsewhere in the file has only had the file change around it.
@@ -141,7 +160,27 @@ pub struct CommitFiles {
     pub paths: Vec<String>,
 }
 
-/// The reads Review Desk makes of GitHub. Four, all read-only.
+/// A file as it stood at one commit. DEV-1344.
+///
+/// Three answers, because they mean three different things to a finding: the commit is
+/// gone (the history was rewritten), the commit is there and the file is not (it was
+/// deleted or moved), or the file is there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BlobAt {
+    /// GitHub has no such commit.
+    CommitMissing,
+    /// The commit is there; no file at this path in it.
+    PathMissing,
+    /// The file, by its git blob id, and its text where GitHub sent it whole.
+    Blob {
+        /// Git's own blob SHA, which is equal for equal contents and only for them.
+        oid: String,
+        /// `None` for a binary file or one too large for GitHub to send.
+        text: Option<String>,
+    },
+}
+
+/// The reads Review Desk makes of GitHub. Five, all read-only.
 ///
 /// **There is no write here and there will not be one.** "Review Desk never posts to
 /// GitHub" is a property of this trait rather than a promise in a comment: the harvester
@@ -161,4 +200,8 @@ pub trait GitHub {
 
     /// One commit's files.
     fn commit(&self, repo: &str, sha: &str) -> Result<CommitFiles>;
+
+    /// One file at one commit, by content. DEV-1344: what "did this file change" is
+    /// answered from, rather than from a comparison that carries upstream work.
+    fn blob(&self, repo: &str, commit: &str, path: &str) -> Result<BlobAt>;
 }

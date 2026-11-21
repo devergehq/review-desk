@@ -71,6 +71,9 @@ fn counts_toward(kind: OutcomeKind) -> Option<Count> {
         OutcomeKind::Replied => Some(Count::Replies),
         OutcomeKind::ThreadResolved => Some(Count::ThreadsResolved),
         OutcomeKind::CodeChangedAfter => Some(Count::FindingsOvertaken),
+        // DEV-1344: a finding the harvester could not answer for. Counted so that step 7
+        // says so, rather than leaving it out and reading as "nothing changed".
+        OutcomeKind::CodeChangeUnknown => Some(Count::FindingsUnknown),
         // The developer's own outcomes. Named rather than swept up by a `_` so that a new
         // kind is a decision somebody makes instead of a count that stays at nought.
         OutcomeKind::Cut
@@ -94,6 +97,8 @@ enum Count {
     /// Counted by finding: a finding whose file two later commits touched is two rows
     /// about one finding.
     FindingsOvertaken,
+    /// Counted by finding: one finding left unknown on two heads is one finding.
+    FindingsUnknown,
 }
 
 impl Store {
@@ -185,6 +190,7 @@ impl Store {
                 Some(Count::Replies) => found.replies = rows_held,
                 Some(Count::ThreadsResolved) => found.threads_resolved = rows_held,
                 Some(Count::FindingsOvertaken) => found.findings_overtaken = findings,
+                Some(Count::FindingsUnknown) => found.findings_unknown = findings,
                 // Unreachable: the statement above asked for these kinds and no other.
                 None => {}
             }
@@ -213,6 +219,9 @@ struct Found {
     /// Findings whose file a later commit changed, counted once each however many
     /// commits changed it.
     findings_overtaken: i64,
+    /// Findings the harvester could not answer "did the code change" for, counted once
+    /// each. DEV-1344. Never the strongest fact: it says what is not known.
+    findings_unknown: i64,
 }
 
 impl Found {
@@ -305,6 +314,18 @@ fn facts_for(ended: Option<&'static str>, found: &Found) -> Vec<NewLayerFact> {
             ),
         ));
     }
+    if found.findings_unknown > 0 {
+        // "—" first, because the figure is not known and must not read as a count of
+        // changes; the count is how many findings it is not known for. DEV-1344.
+        facts.push(fact(
+            "Code change unknown",
+            format!(
+                "— {} {}",
+                found.findings_unknown,
+                plural(found.findings_unknown, "finding", "findings")
+            ),
+        ));
+    }
 
     facts
 }
@@ -337,21 +358,25 @@ mod tests {
                 replies: 1,
                 threads_resolved: 1,
                 findings_overtaken: 1,
+                findings_unknown: 0,
             },
             Found {
                 replies: 2,
                 threads_resolved: 3,
                 findings_overtaken: 4,
+                findings_unknown: 0,
             },
             Found {
                 replies: 0,
                 threads_resolved: 7,
                 findings_overtaken: 0,
+                findings_unknown: 0,
             },
             Found {
                 replies: 0,
                 threads_resolved: 0,
                 findings_overtaken: 2,
+                findings_unknown: 0,
             },
             // Three digits of each, which is where a detail that listed them all would
             // have broken the four-word limit.
@@ -359,6 +384,7 @@ mod tests {
                 replies: 128,
                 threads_resolved: 256,
                 findings_overtaken: 512,
+                findings_unknown: 640,
             },
         ];
 
@@ -420,6 +446,7 @@ mod tests {
             replies: 2,
             threads_resolved: 3,
             findings_overtaken: 4,
+            findings_unknown: 0,
         };
         assert_eq!(detail_for(None, &replies_and_more), "2 replies back");
 
@@ -427,6 +454,7 @@ mod tests {
             replies: 0,
             threads_resolved: 3,
             findings_overtaken: 4,
+            findings_unknown: 0,
         };
         assert_eq!(detail_for(None, &no_replies), "3 threads resolved");
 
@@ -434,6 +462,7 @@ mod tests {
             replies: 0,
             threads_resolved: 0,
             findings_overtaken: 4,
+            findings_unknown: 0,
         };
         assert_eq!(detail_for(None, &only_commits), "code changed since");
     }
@@ -444,6 +473,7 @@ mod tests {
             replies: 1,
             threads_resolved: 1,
             findings_overtaken: 1,
+            findings_unknown: 0,
         };
         assert_eq!(detail_for(None, &one), "1 reply back");
 
@@ -471,6 +501,7 @@ mod tests {
             replies: 2,
             threads_resolved: 2,
             findings_overtaken: 0,
+            findings_unknown: 0,
         };
 
         assert_eq!(detail_for(Some("merged"), &found), "merged, 2 replies back");
@@ -508,6 +539,28 @@ mod tests {
     }
 
     #[test]
+    fn a_finding_nobody_could_answer_for_is_a_dash_and_never_the_detail() {
+        // DEV-1344. The reviewed commit was gone after a force-push, so whether the code
+        // changed is not known. The card says so with "—"; leaving it out would read as
+        // "nothing changed", and the detail is never a sentence about what is not known.
+        let unknown = Found {
+            findings_unknown: 2,
+            ..Found::default()
+        };
+
+        assert_eq!(detail_for(None, &unknown), NOTHING_BACK_DETAIL);
+        assert_eq!(
+            facts_for(None, &unknown)
+                .last()
+                .map(|fact| (fact.label.clone(), fact.value.clone())),
+            Some((
+                "Code change unknown".to_string(),
+                "— 2 findings".to_string()
+            ))
+        );
+    }
+
+    #[test]
     fn the_kinds_a_harvest_counts_are_the_kinds_it_writes() {
         // Named here so that a kind added to `counts_toward` — or taken out of it — is a
         // line in a diff rather than a figure that quietly changes on the page.
@@ -519,8 +572,13 @@ mod tests {
 
         assert_eq!(
             counted,
-            vec!["replied", "thread_resolved", "code_changed_after"],
-            "the three a harvest writes, and nothing the developer writes by hand"
+            vec![
+                "replied",
+                "thread_resolved",
+                "code_changed_after",
+                "code_change_unknown"
+            ],
+            "the four a harvest writes, and nothing the developer writes by hand"
         );
     }
 

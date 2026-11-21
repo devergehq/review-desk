@@ -207,6 +207,12 @@ string_enum! {
         Replied => "replied",
         ThreadResolved => "thread_resolved",
         CodeChangedAfter => "code_changed_after",
+        /// The harvester could not say whether the code a finding points at changed after
+        /// the review was posted, and records why. DEV-1344. **Not an author's act and
+        /// not a nought**: the commit the review read can be gone from GitHub after a
+        /// force-push, and "unchanged" is a claim the record could not support. The
+        /// reason is the detail's `reason`; the inbox never lists it as the author's.
+        CodeChangeUnknown => "code_change_unknown",
     }
 }
 
