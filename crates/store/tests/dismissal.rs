@@ -154,7 +154,11 @@ fn a_dismissal_keeps_every_row_under_the_review() {
         )
         .expect("a brief");
     store
-        .confirm_brief(review.id, Actor::Developer)
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
         .expect("the developer's sign-off at layer 2");
     store
         .add_finding(
@@ -1531,17 +1535,30 @@ fn a_dismissed_review_refuses_the_acts_that_need_an_agent_afterwards() {
     for (what, error) in [
         (
             "confirming the brief",
-            store.confirm_brief(review.id, Actor::Developer).err(),
+            store
+                .confirm_brief(
+                    review.id,
+                    Actor::Developer,
+                    &common::brief_shown(&store, review.id),
+                )
+                .err(),
         ),
         (
             "approving the draft",
             store
-                .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+                .approve_draft(
+                    review.id,
+                    ReviewEvent::Comment,
+                    Actor::Developer,
+                    &common::shown(&store, review.id),
+                )
                 .err(),
         ),
         (
             "sending it back",
-            store.send_back_draft(review.id, "cut the nits").err(),
+            store
+                .send_back_draft(review.id, "cut the nits", &common::shown(&store, review.id))
+                .err(),
         ),
         (
             "asking for the ticket",
@@ -1577,7 +1594,11 @@ fn a_dismissed_review_refuses_the_acts_that_need_an_agent_afterwards() {
     // Restored, the four are offered again.
     store.restore_review(review.id).expect("restore it");
     store
-        .confirm_brief(review.id, Actor::Developer)
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
         .expect("confirming is the developer's again");
 }
 

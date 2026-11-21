@@ -297,7 +297,7 @@ fn an_older_database_is_migrated_forward_and_keeps_its_rows() {
         .expect("an exception can be written after the migration");
 
     migrated
-        .confirm_brief(1, Actor::Developer)
+        .confirm_brief(1, Actor::Developer, &common::brief_shown(&migrated, 1))
         .expect("the brief can be confirmed after the migration");
 
     // And migration 7's two tables are usable against the migrated database rather than

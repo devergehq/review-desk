@@ -56,3 +56,24 @@ pub fn new_review(repo: &str, pr: i64, head: &str, round: i64) -> review_desk_st
         ..Default::default()
     }
 }
+
+/// What the dashboard would send back as shown for this review's draft — DEV-1346.
+///
+/// A draft that is not there reads as shown nothing, so a test about refusing it is still
+/// refused for the reason it is about.
+#[allow(dead_code)]
+pub fn shown(store: &review_desk_store::Store, review_id: i64) -> review_desk_store::DraftShown {
+    store
+        .draft_shown(review_id)
+        .unwrap_or_else(|_| review_desk_store::DraftShown {
+            body_sha256: String::new(),
+            threads_sha256: String::new(),
+            draft_rev: 0,
+        })
+}
+
+/// The hash of this review's brief as the dashboard would send it back, or nothing.
+#[allow(dead_code)]
+pub fn brief_shown(store: &review_desk_store::Store, review_id: i64) -> String {
+    store.brief_sha256(review_id).unwrap_or_default()
+}

@@ -333,7 +333,12 @@ fn the_finished_review_list_is_served_as_one_read() {
 
     harness
         .store
-        .approve_draft(seeded.review_id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            seeded.review_id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&harness.store, seeded.review_id),
+        )
         .expect("the developer signs it off");
     harness
         .store

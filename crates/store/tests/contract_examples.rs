@@ -569,7 +569,11 @@ fn seed(store: &Store) -> Seeded {
         )
         .expect("a brief");
     store
-        .confirm_brief(review.id, Actor::Developer)
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(store, review.id),
+        )
         .expect("the developer confirms it");
 
     // The developer's edits between draft and post, which is where they live.
@@ -863,7 +867,11 @@ fn seed(store: &Store) -> Seeded {
         )
         .expect("its brief");
     store
-        .confirm_brief(posted_review.id, Actor::Developer)
+        .confirm_brief(
+            posted_review.id,
+            Actor::Developer,
+            &common::brief_shown(store, posted_review.id),
+        )
         .expect("the developer confirmed it");
     for number in [1, 3, 4, 5] {
         store
@@ -890,7 +898,12 @@ fn seed(store: &Store) -> Seeded {
         )
         .expect("its draft");
     store
-        .approve_draft(posted_review.id, ReviewEvent::Approve, Actor::Developer)
+        .approve_draft(
+            posted_review.id,
+            ReviewEvent::Approve,
+            Actor::Developer,
+            &common::shown(store, posted_review.id),
+        )
         .expect("signed off");
     store
         .post_draft(posted_review.id, "gh-review-3291")
@@ -955,6 +968,7 @@ fn seed(store: &Store) -> Seeded {
             answered_review.id,
             ReviewEvent::RequestChanges,
             Actor::Developer,
+            &common::shown(store, answered_review.id),
         )
         .expect("signed off");
     store
@@ -1227,6 +1241,8 @@ fn brief_document(brief: &Brief) -> Value {
         "provenance": brief.provenance,
         // Derived: true exactly when there is a confirmation time.
         "confirmed": brief.confirmed_at.is_some(),
+        // What a confirmation sends back — DEV-1346. Computed by the store.
+        "sha256": review_desk_store::brief_hash(brief),
         "confirmed_at": brief.confirmed_at,
         "confirmation_required": brief.confirmation_required,
         "confirmation_not_required_because": brief.confirmation_not_required_because,
@@ -1961,6 +1977,8 @@ fn draft_detail(store: &Store, review_id: i64) -> Value {
 
     json!({
         "draft": draft_document(&draft),
+        // What the sign-offs send back — DEV-1346. Computed by the store.
+        "shown": store.draft_shown(review_id).expect("what is shown"),
         "review": review_document(&review),
         // Why this draft may not be signed off, or null when it may. The store answers
         // it and the page draws it, so a screen cannot offer a sign-off the API refuses.
@@ -2440,6 +2458,10 @@ fn every_response_example_can_be_produced_from_the_store() {
 
     fields += check("getReview", &detail);
     fields += check("getInbox", &inbox(&store, &seeded));
+    // **Signing in answers a constant**, and nothing about it is the store's: the token and
+    // the cookie live in the server's memory and never in the record — DEV-1346. Checked
+    // here so that the example is accounted for rather than skipped.
+    fields += check("signIn", &json!({ "developer": true }));
     fields += check("getDraft", &draft_detail(&store, review));
     fields += check("saveDraft", &draft_detail(&store, review));
     fields += check("listRepos", &repos_page(&store));
@@ -2645,7 +2667,11 @@ fn every_response_example_can_be_produced_from_the_store() {
 
     // The two drafts that need a status the seeded one is not at.
     store
-        .send_back_draft(review, "F2 is the option map talking, not the diff.")
+        .send_back_draft(
+            review,
+            "F2 is the option map talking, not the diff.",
+            &common::shown(&store, review),
+        )
         .expect("send back");
     fields += check("sendBackDraft", &draft_detail(&store, review));
 
@@ -2746,7 +2772,12 @@ fn every_response_example_can_be_produced_from_the_store() {
         )
         .expect("rework");
     store
-        .approve_draft(review, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            review,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .expect("approve");
     fields += check("approveDraft", &draft_detail(&store, review));
 
@@ -2799,7 +2830,12 @@ fn every_response_example_can_be_produced_from_the_store() {
         )
         .expect("a draft");
     let settled = store
-        .ticket_rest_and_approve(last, Some("one ticket for an agent"), Actor::Developer)
+        .ticket_rest_and_approve(
+            last,
+            Some("one ticket for an agent"),
+            Actor::Developer,
+            &common::shown(&store, last),
+        )
         .expect("ticket what is left, and approve");
     fields += check(
         "ticketRestAndApprove",
@@ -2904,6 +2940,7 @@ fn every_response_example_is_checked() {
     // A new endpoint's example must be added to the test above rather than silently
     // skipped. This is what makes the check above exhaustive over the directory.
     let checked: BTreeSet<&str> = [
+        "signIn",
         "getReview",
         "getInbox",
         "getDraft",

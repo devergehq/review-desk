@@ -1249,12 +1249,12 @@ impl Api {
     /// **Of the brief the page drew** — DEV-1346. The body carries the `sha256` the brief
     /// was served with, and a brief rewritten since is a `409` that wrote nothing.
     fn confirm_brief(&self, review_id: i64, body: &[u8]) -> Result<(u16, Value), ApiError> {
-        let request: ConfirmBriefRequest = read_body(body)?;
-
         // Checked first so an unknown review is 404 and a review with no brief is 409.
         // The contract gives the operation both, and they are different things to say.
+        // Both before the body, which is the order `dismiss_review` gives the reason for.
         self.records.review(review_id)?;
         self.records.brief_to_confirm(review_id)?;
+        let request: ConfirmBriefRequest = read_body(body)?;
 
         // Confirming an already confirmed brief returns it unchanged rather than failing,
         // which is what the store does and what the contract asks for.
@@ -1586,10 +1586,13 @@ impl Api {
     /// stores the chosen event and the time, and stops. The review session finds the
     /// approved draft and posts it under the developer's name.
     fn approve_draft(&self, review_id: i64, body: &[u8]) -> Result<(u16, Value), ApiError> {
+        // The review before the body, as `dismiss_review` argues: since the body carries
+        // what a page was shown, a review nobody has would otherwise be refused for a body
+        // nobody could have sent.
+        self.records.review(review_id)?;
         let request: ApproveDraftRequest = read_body(body)?;
         let event: ReviewEvent = request.event.parse().map_err(ApiError::from)?;
 
-        self.records.review(review_id)?;
         self.draft_must_be(review_id, DraftStatus::Ready, "approved")?;
 
         let approved = self
@@ -1600,6 +1603,7 @@ impl Api {
 
     /// `POST /reviews/{reviewId}/draft/send-back`.
     fn send_back_draft(&self, review_id: i64, body: &[u8]) -> Result<(u16, Value), ApiError> {
+        self.records.review(review_id)?;
         let request: SendBackDraftRequest = read_body(body)?;
 
         let note = trimmed(Some(request.note)).ok_or_else(|| {
@@ -1711,10 +1715,10 @@ impl Api {
         body: &[u8],
     ) -> Result<(u16, Value), ApiError> {
         // **A body is required now**, where it was optional: what the developer was shown
-        // is part of the act — DEV-1346.
+        // is part of the act — DEV-1346. Read after the review, for `approve_draft`'s reason.
+        self.records.review(review_id)?;
         let request: TicketRestAndApproveRequest = read_body(body)?;
 
-        self.records.review(review_id)?;
         self.draft_must_be(review_id, DraftStatus::Ready, "approved")?;
 
         let note = trimmed(request.note);

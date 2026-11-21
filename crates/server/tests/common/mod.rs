@@ -123,6 +123,8 @@ impl<G: GitHub> GitHub for Counted<G> {
 pub struct Harness {
     pub running: Running,
     pub store: Store,
+    /// The developer cookie, signed in for once at start the way the page does — DEV-1346.
+    pub cookie: String,
     _directory: TempDir,
 }
 
@@ -184,6 +186,22 @@ fn start_on_a_fresh_database(
     proxied: Option<Hostname>,
     allele: Allele,
 ) -> Harness {
+    start_signed_in_or_not(github, proxied, allele, false).0
+}
+
+/// A server that has not been signed in to, and the token that would sign in to it.
+///
+/// For the tests of signing in itself: every other harness spends its token at start.
+pub fn start_holding_its_token() -> (Harness, String) {
+    start_signed_in_or_not(Recorded::nothing(), None, Allele::none(), true)
+}
+
+fn start_signed_in_or_not(
+    github: impl review_desk_harvest::GitHub + Send + 'static,
+    proxied: Option<Hostname>,
+    allele: Allele,
+    keep_the_token: bool,
+) -> (Harness, String) {
     let directory = tempfile::tempdir().expect("a temporary directory");
     let path = directory.path().join("review-desk.db");
 
@@ -198,11 +216,41 @@ fn start_on_a_fresh_database(
         .also_answering_to(proxied)
         .reading_sessions_from(allele);
 
-    Harness {
-        running: server.spawn(),
-        store,
-        _directory: directory,
-    }
+    let token = server
+        .sign_in_token()
+        .expect("a fresh server holds its token");
+    let running = server.spawn();
+    let cookie = if keep_the_token {
+        String::new()
+    } else {
+        sign_in(&running.base(), &token)
+            .expect("a fresh server's own token buys the developer cookie")
+    };
+
+    (
+        Harness {
+            running,
+            store,
+            cookie,
+            _directory: directory,
+        },
+        token,
+    )
+}
+
+/// Trade a sign-in token for the developer cookie, as the page does. `None` when refused.
+pub fn sign_in(base: &str, token: &str) -> Option<String> {
+    let answer = request(
+        base,
+        "POST",
+        "/api/v1/developer/sign-in",
+        Some(&serde_json::json!({ "token": token }).to_string()),
+    );
+    let set = answer.header("set-cookie")?.to_string();
+    set.split(';')
+        .next()
+        .and_then(|pair| pair.trim().strip_prefix("rd_developer="))
+        .map(str::to_string)
 }
 
 /// Start a server whose GitHub has nothing recorded, so every read fails.
@@ -216,9 +264,93 @@ impl Harness {
         self.request(method, &format!("/api/v1{path}"), body)
     }
 
-    /// A request to anything.
+    /// A request to anything, as the developer's own page would send it.
+    ///
+    /// **Signed in, and carrying what was shown.** The cookie goes on every request, and a
+    /// sign-off that does not say what was shown is given the `shown` the page would send:
+    /// the draft's or the brief's, read just before. That is what the page does, so a test
+    /// about something else is not made to spell it out; `developer.rs` is where sending
+    /// none, or a stale one, is tested, through [`Harness::raw`] and [`Harness::as_anyone`].
     pub fn request(&self, method: &str, path: &str, body: Option<&str>) -> Answer {
-        request(&self.running.base(), method, path, body)
+        let body = self.with_what_was_shown(method, path, body);
+        let address = self
+            .running
+            .base()
+            .trim_start_matches("http://")
+            .to_string();
+        let cookie = format!("rd_developer={}", self.cookie);
+        raw_request(
+            &self.running.base(),
+            method,
+            path,
+            &[
+                ("Host", &address),
+                ("Content-Type", "application/json"),
+                ("Cookie", &cookie),
+            ],
+            body.as_deref(),
+        )
+    }
+
+    /// An API request with the correct headers and no cookie: anything on this machine
+    /// that is not the developer's browser.
+    pub fn as_anyone(&self, method: &str, path: &str, body: Option<&str>) -> Answer {
+        request(
+            &self.running.base(),
+            method,
+            &format!("/api/v1{path}"),
+            body,
+        )
+    }
+
+    /// What the draft's page would send back as `shown`, read now.
+    pub fn draft_shown(&self, review_id: i64) -> Value {
+        let path = format!("/api/v1/reviews/{review_id}/draft");
+        request_with_cookie(self, "GET", &path, None).json()["shown"].clone()
+    }
+
+    /// The `sha256` of the brief, as the review's page was served it, read now.
+    pub fn brief_shown(&self, review_id: i64) -> Value {
+        let path = format!("/api/v1/reviews/{review_id}");
+        request_with_cookie(self, "GET", &path, None).json()["brief"]["sha256"].clone()
+    }
+
+    /// `body`, with the `shown` a page would add when this is a sign-off without one.
+    fn with_what_was_shown(&self, method: &str, path: &str, body: Option<&str>) -> Option<String> {
+        if method != "POST" {
+            return body.map(str::to_string);
+        }
+        let parts: Vec<&str> = path.trim_start_matches("/api/v1/").split('/').collect();
+        let (review_id, act) = match parts.as_slice() {
+            ["reviews", id, "draft", act] => (id.parse::<i64>().ok(), *act),
+            ["reviews", id, "brief", "confirm"] => (id.parse::<i64>().ok(), "confirm"),
+            _ => return body.map(str::to_string),
+        };
+        let Some(review_id) = review_id else {
+            return body.map(str::to_string);
+        };
+        let (field, shown) = match act {
+            "approve" | "send-back" | "ticket-and-approve" => {
+                ("shown", self.draft_shown(review_id))
+            }
+            "confirm" => ("shown_brief_sha256", self.brief_shown(review_id)),
+            _ => return body.map(str::to_string),
+        };
+        let mut document: Value = match body {
+            None | Some("") => serde_json::json!({}),
+            Some(text) => match serde_json::from_str(text) {
+                Ok(document) => document,
+                // Not JSON: the test is about that, so it goes as it is.
+                Err(_) => return Some(text.to_string()),
+            },
+        };
+        match document.as_object_mut() {
+            Some(object) if !object.contains_key(field) && !shown.is_null() => {
+                object.insert(field.to_string(), shown);
+                Some(document.to_string())
+            }
+            _ => body.map(str::to_string),
+        }
     }
 
     /// A request with the headers stated exactly, and nothing added.
@@ -849,4 +981,46 @@ pub fn seed(store: &Store) -> Seeded {
         proposed_rule_id,
         running_review_id: running_id,
     }
+}
+
+/// What the dashboard would send back as shown for this review's draft — DEV-1346.
+///
+/// A draft that is not there reads as shown nothing, so a test about refusing it is still
+/// refused for the reason it is about.
+#[allow(dead_code)]
+pub fn shown(store: &review_desk_store::Store, review_id: i64) -> review_desk_store::DraftShown {
+    store
+        .draft_shown(review_id)
+        .unwrap_or_else(|_| review_desk_store::DraftShown {
+            body_sha256: String::new(),
+            threads_sha256: String::new(),
+            draft_rev: 0,
+        })
+}
+
+/// The hash of this review's brief as the dashboard would send it back, or nothing.
+#[allow(dead_code)]
+pub fn brief_shown(store: &review_desk_store::Store, review_id: i64) -> String {
+    store.brief_sha256(review_id).unwrap_or_default()
+}
+
+/// A request with the harness's cookie and nothing else added.
+fn request_with_cookie(harness: &Harness, method: &str, path: &str, body: Option<&str>) -> Answer {
+    let address = harness
+        .running
+        .base()
+        .trim_start_matches("http://")
+        .to_string();
+    let cookie = format!("rd_developer={}", harness.cookie);
+    raw_request(
+        &harness.running.base(),
+        method,
+        path,
+        &[
+            ("Host", &address),
+            ("Content-Type", "application/json"),
+            ("Cookie", &cookie),
+        ],
+        body,
+    )
 }

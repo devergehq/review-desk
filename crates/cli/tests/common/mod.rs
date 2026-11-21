@@ -166,6 +166,8 @@ pub struct Served {
     pub line: String,
     /// Holds the file its output went to. Dropping it removes the file.
     _output: TempDir,
+    /// That file.
+    printed: PathBuf,
 }
 
 impl Drop for Served {
@@ -176,6 +178,12 @@ impl Drop for Served {
 }
 
 impl Served {
+    /// Everything it has printed so far.
+    #[allow(dead_code)]
+    pub fn printed(&self) -> String {
+        std::fs::read_to_string(&self.printed).unwrap_or_default()
+    }
+
     /// The address it is answering on, as `host:port`.
     ///
     /// Read out of the line it printed, in either form: `--json` prints one document
@@ -199,6 +207,11 @@ impl Served {
 
 /// Start `review-desk serve` on a free port and read the line it prints.
 pub fn serve(desk: &Desk, json: bool) -> Served {
+    serve_with(desk, json, &[])
+}
+
+/// [`serve`], with these variables in the child's environment and nobody else's.
+pub fn serve_with(desk: &Desk, json: bool, environment: &[(&str, &str)]) -> Served {
     let output = TempDir::new().expect("a directory for the child's output");
     let path = output.path().join("serve.out");
     let file = std::fs::File::create(&path).expect("the child's output file");
@@ -214,6 +227,7 @@ pub fn serve(desk: &Desk, json: bool) -> Served {
     if json {
         command.arg("--json");
     }
+    command.envs(environment.iter().copied());
 
     let child = command.spawn().expect("starting review-desk serve");
 
@@ -239,6 +253,7 @@ pub fn serve(desk: &Desk, json: bool) -> Served {
         child,
         line,
         _output: output,
+        printed: path,
     }
 }
 
@@ -270,6 +285,21 @@ pub fn get(address: &str, path: &str) -> String {
     answer
 }
 
+/// One JSON POST, and the whole answer as text.
+#[allow(dead_code)]
+pub fn post(address: &str, path: &str, body: &str) -> String {
+    let mut socket = TcpStream::connect(address).expect("connecting to the served address");
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    socket.write_all(request.as_bytes()).expect("the request");
+    let mut answer = String::new();
+    socket.read_to_string(&mut answer).expect("the answer");
+    answer
+}
+
 /// One GET that must answer 200 with one JSON document, and hand that document back.
 pub fn get_json(address: &str, path: &str) -> Value {
     let answer = get(address, path);
@@ -283,4 +313,25 @@ pub fn get_json(address: &str, path: &str) -> Value {
         .unwrap_or_else(|| panic!("GET {path} answered with no body: {answer}"));
     serde_json::from_str(body)
         .unwrap_or_else(|error| panic!("GET {path} did not answer one document: {error}\n{body}"))
+}
+
+/// What the dashboard would send back as shown for this review's draft — DEV-1346.
+///
+/// A draft that is not there reads as shown nothing, so a test about refusing it is still
+/// refused for the reason it is about.
+#[allow(dead_code)]
+pub fn shown(store: &review_desk_store::Store, review_id: i64) -> review_desk_store::DraftShown {
+    store
+        .draft_shown(review_id)
+        .unwrap_or_else(|_| review_desk_store::DraftShown {
+            body_sha256: String::new(),
+            threads_sha256: String::new(),
+            draft_rev: 0,
+        })
+}
+
+/// The hash of this review's brief as the dashboard would send it back, or nothing.
+#[allow(dead_code)]
+pub fn brief_shown(store: &review_desk_store::Store, review_id: i64) -> String {
+    store.brief_sha256(review_id).unwrap_or_default()
 }

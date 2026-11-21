@@ -126,11 +126,23 @@ fn a_brief_is_confirmed_once_and_replacing_it_undoes_that() {
         )
         .unwrap();
 
-    let confirmed = store.confirm_brief(review.id, Actor::Developer).unwrap();
+    let confirmed = store
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
+        .unwrap();
     assert!(confirmed.is_confirmed());
     let at = confirmed.confirmed_at;
 
-    let again = store.confirm_brief(review.id, Actor::Developer).unwrap();
+    let again = store
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
+        .unwrap();
     assert_eq!(
         again.confirmed_at, at,
         "confirming twice keeps the first time"
@@ -226,7 +238,13 @@ fn a_whole_review_reads_back_in_one_call() {
             },
         )
         .unwrap();
-    store.confirm_brief(review.id, Actor::Developer).unwrap();
+    store
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
+        .unwrap();
 
     for claim in ["one", "two", "three"] {
         store

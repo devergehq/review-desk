@@ -64,7 +64,11 @@ fn confirming_a_brief_finishes_layer_two() {
     );
 
     store
-        .confirm_brief(review.id, Actor::Developer)
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
         .expect("the developer confirms it");
 
     let (state, detail) = layer(&store, review.id, 2);
@@ -89,7 +93,12 @@ fn approving_a_draft_finishes_layer_six() {
     let review = with_ready_draft(&store);
 
     store
-        .approve_draft(review.id, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            review.id,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(&store, review.id),
+        )
         .expect("the developer approves it");
 
     let (state, detail) = layer(&store, review.id, 6);
@@ -104,7 +113,7 @@ fn sending_a_draft_back_puts_layer_six_in_progress_with_the_note() {
 
     let note = "F2 is the same point as F1; cut one of them";
     store
-        .send_back_draft(review.id, note)
+        .send_back_draft(review.id, note, &common::shown(&store, review.id))
         .expect("the developer sends it back");
 
     let (state, detail) = layer(&store, review.id, 6);
@@ -126,7 +135,12 @@ fn marking_a_draft_posted_leaves_layer_seven_pending() {
     let (_dir, store) = temp_store();
     let review = with_ready_draft(&store);
     store
-        .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            review.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, review.id),
+        )
         .expect("approved");
 
     store
@@ -261,7 +275,11 @@ fn a_sign_off_whose_layer_row_fails_writes_neither() {
         .expect("the trigger");
     }
 
-    let refused = store.confirm_brief(review.id, Actor::Developer);
+    let refused = store.confirm_brief(
+        review.id,
+        Actor::Developer,
+        &common::brief_shown(&store, review.id),
+    );
     assert!(
         refused.is_err(),
         "the layer row could not be written, so the call fails: {refused:?}"
@@ -323,7 +341,12 @@ fn a_sign_off_whose_layer_row_fails_writes_neither() {
     }
 
     // The same for the draft's other three transitions, which share the arrangement.
-    let refused = store.approve_draft(review.id, ReviewEvent::Comment, Actor::Developer);
+    let refused = store.approve_draft(
+        review.id,
+        ReviewEvent::Comment,
+        Actor::Developer,
+        &common::shown(&store, review.id),
+    );
     assert!(
         refused.is_err(),
         "approving fails the same way: {refused:?}"
@@ -352,7 +375,11 @@ fn rewriting_a_confirmed_brief_puts_layer_two_back_to_waiting() {
     let (_dir, store) = temp_store();
     let review = with_brief(&store);
     store
-        .confirm_brief(review.id, Actor::Developer)
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
         .expect("the developer confirms it");
     assert_eq!(layer(&store, review.id, 2).0, ReviewLayerState::Done);
 
@@ -400,7 +427,12 @@ fn reporting_a_draft_posted_twice_does_not_un_harvest_layer_seven() {
     let (_dir, store) = temp_store();
     let review = with_ready_draft(&store);
     store
-        .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            review.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, review.id),
+        )
         .expect("approved");
     store
         .post_draft(review.id, "gh-review-3312")
@@ -435,7 +467,12 @@ fn reporting_a_draft_posted_twice_does_not_un_harvest_a_running_layer_seven() {
     let (_dir, store) = temp_store();
     let review = with_ready_draft(&store);
     store
-        .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            review.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, review.id),
+        )
         .expect("approved");
     store
         .post_draft(review.id, "gh-review-3312")

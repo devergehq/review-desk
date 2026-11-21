@@ -42,7 +42,12 @@ fn signed_off(store: &Store, head: &str) -> i64 {
         .put_draft(review, NewDraft::ready("One finding on the retry path.\n"))
         .expect("a draft the session finished");
     store
-        .approve_draft(review, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            review,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(store, review),
+        )
         .expect("the developer signs it off");
     review
 }
@@ -134,7 +139,12 @@ fn a_draft_reported_posted_is_a_post_as_well_as_a_linked_review() {
         .put_draft(one.review.id, NewDraft::ready("One finding.\n"))
         .expect("a draft");
     store
-        .approve_draft(one.review.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            one.review.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, one.review.id),
+        )
         .expect("signed off");
     store
         .post_draft(one.review.id, "PRR_kwDOtheposted")
@@ -389,7 +399,12 @@ fn approving_a_draft_again_clears_the_withdrawal() {
         )
         .expect("the session updates it for the new commit");
     store
-        .approve_draft(review, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            review,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .expect("signed off again");
 
     let draft = store.get_draft(review).expect("the draft");

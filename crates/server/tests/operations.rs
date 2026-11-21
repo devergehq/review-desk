@@ -1,4 +1,4 @@
-//! Every one of the contract's thirty operations is routed and answers.
+//! Every one of the contract's thirty-one operations is routed and answers.
 //!
 //! This walks `Operation::ALL` rather than listing routes by hand, so an operation added
 //! to the contract and not to the server fails here instead of 404ing in a browser.
@@ -10,10 +10,11 @@ use std::collections::BTreeSet;
 use review_desk_server::route::Operation;
 use serde_json::Value;
 
-/// The thirty operations, as `contract/README.md` counts them.
+/// The thirty-one operations, as `contract/README.md` counts them. DEV-1346 added the
+/// thirty-first, `signIn`.
 #[test]
-fn the_contract_has_thirty_operations() {
-    assert_eq!(Operation::ALL.len(), 30);
+fn the_contract_has_thirty_one_operations() {
+    assert_eq!(Operation::ALL.len(), 31);
 }
 
 /// The contract's own `paths` and this crate's `Operation` name the same set.
@@ -271,6 +272,15 @@ pub fn call(
         .replace("/reviews/1", &format!("/reviews/{}", seeded.review_id))
         .replace("/rules/1/", &format!("/rules/{}/", seeded.rule_id));
     let (method, path) = route.split_once(' ').expect("a method and a path");
+
+    // **Signing in is asked of a server that has not been signed in to.** Every harness
+    // spends its own token at start, which is what lets the other thirty send the cookie;
+    // a second trade of the same token is refused, correctly, as spent.
+    if operation == Operation::SignIn {
+        let (unspent, token) = common::start_holding_its_token();
+        let body = serde_json::json!({ "token": token }).to_string();
+        return unspent.api(method, path, Some(&body));
+    }
 
     // **Three operations cannot be asked of the seeded review as it stands**, and that is
     // the record being right rather than the harness being awkward: the seeded review

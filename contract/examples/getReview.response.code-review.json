@@ -438,6 +438,7 @@
     "approach_verdict": "C is the right shape. It is the only option of the eight that answers all three problems, and the one departure from the ticket \u2014 where the context is constructed \u2014 is justified in the record.",
     "provenance": "from the ticket, the pull request description and the code",
     "confirmed": true,
+    "sha256": "7b044ed052ec1530d0645a559f973bb5f56b66caf777da71b834810e4746e9b8",
     "confirmed_at": "2026-10-09T22:14:00Z",
     "confirmation_required": true,
     "confirmation_not_required_because": null,

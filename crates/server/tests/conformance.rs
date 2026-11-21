@@ -418,6 +418,7 @@ fn the_inbox_validates() {
             seeded.review_id,
             review_desk_store::ReviewEvent::RequestChanges,
             review_desk_store::Actor::Developer,
+            &common::shown(&harness.store, seeded.review_id),
         )
         .expect("signed off");
     harness
@@ -469,6 +470,7 @@ fn a_posted_review_whose_pull_request_is_open_is_served_as_waiting_on_its_author
             seeded.review_id,
             review_desk_store::ReviewEvent::RequestChanges,
             review_desk_store::Actor::Developer,
+            &common::shown(&harness.store, seeded.review_id),
         )
         .expect("signed off");
     harness
@@ -1028,6 +1030,7 @@ fn the_finished_review_timings_validate() {
             seeded.review_id,
             review_desk_store::ReviewEvent::Comment,
             review_desk_store::Actor::Developer,
+            &common::shown(&harness.store, seeded.review_id),
         )
         .expect("signed off");
     harness
@@ -1256,6 +1259,7 @@ fn a_second_round_validates_whole_and_carries_the_timeline() {
             seeded.review_id,
             review_desk_store::ReviewEvent::RequestChanges,
             review_desk_store::Actor::Developer,
+            &common::shown(store, seeded.review_id),
         )
         .expect("the developer approves round 1");
     store

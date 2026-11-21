@@ -75,7 +75,11 @@ fn a_whole_review_is_recorded_and_read_back() {
         .assert()
         .success();
     desk.store()
-        .confirm_brief(review.parse().expect("the review id"), Actor::Developer)
+        .confirm_brief(
+            review.parse().expect("the review id"),
+            Actor::Developer,
+            &common::brief_shown(&desk.store(), review.parse().expect("the review id")),
+        )
         .expect("the developer confirms the brief");
 
     // Three findings. Each prints its sequence number within the review.
@@ -377,7 +381,11 @@ fn replacing_a_brief_undoes_its_confirmation() {
         .success();
     let confirmed = desk
         .store()
-        .confirm_brief(review.parse().expect("the review id"), Actor::Developer)
+        .confirm_brief(
+            review.parse().expect("the review id"),
+            Actor::Developer,
+            &common::brief_shown(&desk.store(), review.parse().expect("the review id")),
+        )
         .expect("the developer confirms the brief");
     assert!(confirmed.confirmed_at.is_some());
 

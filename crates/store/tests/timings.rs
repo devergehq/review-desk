@@ -122,7 +122,11 @@ fn a_draft_sent_back_and_redrafted_reports_both_runs_and_their_total() {
 
     clock.advance(5 * 60);
     store
-        .send_back_draft(review.id, "F2 is the same point as F1; cut one of them")
+        .send_back_draft(
+            review.id,
+            "F2 is the same point as F1; cut one of them",
+            &common::shown(&store, review.id),
+        )
         .expect("the developer sends it back");
 
     clock.advance(6 * 60);
@@ -132,7 +136,12 @@ fn a_draft_sent_back_and_redrafted_reports_both_runs_and_their_total() {
 
     clock.advance(60);
     store
-        .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            review.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, review.id),
+        )
         .expect("the developer signs it off");
 
     let layer = store.get_review_layer(review.id, 6).expect("layer 6");
@@ -211,7 +220,11 @@ fn the_review_splits_its_time_between_the_agent_and_the_developer() {
         .expect("the brief is ready");
     clock.advance(10 * 60);
     store
-        .confirm_brief(review.id, Actor::Developer)
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
         .expect("the developer confirms it");
 
     // Then the session works for twenty minutes and the draft is ready.
@@ -237,7 +250,12 @@ fn the_review_splits_its_time_between_the_agent_and_the_developer() {
     // And once the developer signs it off, their second wait is counted too.
     clock.advance(3 * 60);
     store
-        .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            review.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, review.id),
+        )
         .expect("signed off");
     let timings = store.review_timings(review.id).expect("the timings again");
     assert_eq!(timings.waiting_on_you_seconds, Some(13 * 60));
@@ -283,7 +301,12 @@ fn the_finished_review_list_is_one_read_and_holds_the_totals() {
         .expect("ready");
     clock.advance(60);
     store
-        .approve_draft(posted.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            posted.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, posted.id),
+        )
         .expect("signed off");
     clock.advance(30);
     store
@@ -449,7 +472,7 @@ fn review_writes_move_the_last_activity_time() {
             "the brief's confirmation",
             Box::new(|| {
                 store
-                    .confirm_brief(id, Actor::Developer)
+                    .confirm_brief(id, Actor::Developer, &common::brief_shown(&store, id))
                     .map(|_| ())
                     .expect("confirmed")
             }),
@@ -561,7 +584,12 @@ fn review_writes_move_the_last_activity_time() {
             "the draft's approval",
             Box::new(|| {
                 store
-                    .approve_draft(id, ReviewEvent::Comment, Actor::Developer)
+                    .approve_draft(
+                        id,
+                        ReviewEvent::Comment,
+                        Actor::Developer,
+                        &common::shown(&store, id),
+                    )
                     .map(|_| ())
                     .expect("approved")
             }),
@@ -816,7 +844,7 @@ fn the_draft_ready_time_is_the_one_the_developer_is_looking_at() {
         .expect("ready");
     clock.advance(300);
     store
-        .send_back_draft(review.id, "cut F2")
+        .send_back_draft(review.id, "cut F2", &common::shown(&store, review.id))
         .expect("sent back");
     clock.advance(300);
     store

@@ -1443,11 +1443,19 @@ fn only_the_developer_can_confirm_a_brief_with_every_row_on_it() {
     store.put_brief(review.id, whole_brief()).expect("a brief");
     for actor in [Actor::Author, Actor::Harvester] {
         assert!(
-            store.confirm_brief(review.id, actor).is_err(),
+            store
+                .confirm_brief(review.id, actor, &common::brief_shown(&store, review.id))
+                .is_err(),
             "{actor} must not confirm a brief"
         );
     }
-    assert!(store.confirm_brief(review.id, Actor::Developer).is_ok());
+    assert!(store
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id)
+        )
+        .is_ok());
 }
 
 // -- the contract's real-length example -----------------------------------------------
@@ -1768,6 +1776,8 @@ fn the_contracts_real_length_brief_can_be_written_and_read_back() {
         "confirmed_at",
         "blind_pass_state",
         "updated_at",
+        // The brief's hash, which a confirmation sends back — DEV-1346.
+        "sha256",
     ] {
         document.remove(served_only);
     }

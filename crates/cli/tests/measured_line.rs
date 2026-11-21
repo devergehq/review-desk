@@ -271,6 +271,7 @@ fn the_hand_over_says_which_commit_each_threads_line_was_measured_on() {
             id,
             review_desk_store::ReviewEvent::RequestChanges,
             review_desk_store::Actor::Developer,
+            &common::shown(&desk.store(), id),
         )
         .expect("the developer approves");
 
@@ -363,6 +364,7 @@ fn the_hand_over_says_no_commit_was_recorded_once_for_the_whole_list() {
             id,
             review_desk_store::ReviewEvent::RequestChanges,
             review_desk_store::Actor::Developer,
+            &common::shown(&desk.store(), id),
         )
         .expect("the developer approves");
 

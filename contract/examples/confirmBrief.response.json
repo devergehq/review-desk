@@ -67,6 +67,7 @@
   "approach_verdict": "B is the right shape for this ticket. It leaves out the one useful part of C: once the 24 hours run out there is no way to replay a delivery by hand. That is finding F2.",
   "provenance": "from the ticket and the code · you corrected one sentence",
   "confirmed": true,
+  "sha256": "8f65759a95e682b65009ce90bc5d485052e6bf02c20e7e2c822b364c9f0ab7f5",
   "confirmed_at": "2026-10-08T10:58:00Z",
   "confirmation_required": true,
   "confirmation_not_required_because": null,
