@@ -409,10 +409,11 @@ export function criterionWhere(criterion: AcceptanceCriterion): string | null {
 export interface NotVerified {
   says: string
   /**
-   * `written` for the session's words or a finished step's answer; `writing` while the code
-   * review runs; `not_started` before it has. Overview's `QuestionMark`, by the same name.
+   * `written` for the session's words only; `none_recorded` for a code review that is over
+   * and wrote none; `writing` while it runs; `not_started` before it has. Overview's
+   * `QuestionMark`, value for value — `none_recorded` is not counted as written there.
    */
-  mark: 'written' | 'writing' | 'not_started'
+  mark: 'written' | 'writing' | 'not_started' | 'none_recorded'
 }
 
 /**
@@ -424,9 +425,11 @@ export interface NotVerified {
  * finished, it recorded nothing left unchecked; running, it is being written; failed or
  * skipped, it never got as far as saying; not yet run, it has not started.
  *
- * **Failed and skipped are `not_started`, with words of their own.** Nothing was answered,
- * so Overview's *N of 5 written* does not count them, and they agree with *What's wrong with
- * it?*, which reads the same step as not graded.
+ * **Only the session's words are `written`.** A finished or skipped code review that wrote
+ * none is `none_recorded`, as Overview marks a step that is over and holds no answer; a
+ * failed one is `not_started`, as Overview's other questions read it. Neither is counted in
+ * *N of 5 written*. Skipped and failed keep sentences of their own, because "no answer" over
+ * a step that never looked says less than why.
  */
 export function notVerified(
   notChecked: string | null | undefined,
@@ -437,13 +440,13 @@ export function notVerified(
   switch (layers.find(layer => layer.name === 'code_review')?.state) {
     case 'done':
     case 'waiting_on_you':
-      return { says: 'The review records nothing it left unchecked.', mark: 'written' }
+      return { says: 'The review records nothing it left unchecked.', mark: 'none_recorded' }
     case 'running':
       return { says: 'Writing now.', mark: 'writing' }
     case 'failed':
       return { says: 'The code review failed before it listed what it did not look at.', mark: 'not_started' }
     case 'skipped':
-      return { says: 'The code review was skipped, so nothing lists what it did not look at.', mark: 'not_started' }
+      return { says: 'The code review was skipped, so nothing lists what it did not look at.', mark: 'none_recorded' }
     default:
       return { says: 'Not started. Listed once the checks finish.', mark: 'not_started' }
   }

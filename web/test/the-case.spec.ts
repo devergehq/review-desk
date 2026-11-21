@@ -420,14 +420,15 @@ describe('what was not verified', () => {
 
   it('says what an empty field means, by each state the code review can be in', () => {
     expect(notVerified(null, layers('done')).says).toBe('The review records nothing it left unchecked.')
-    expect(notVerified(null, layers('waiting_on_you')).mark).toBe('written')
+    expect(notVerified(null, layers('done')).mark).toBe('none_recorded')
+    expect(notVerified(null, layers('waiting_on_you')).mark).toBe('none_recorded')
     expect(notVerified('  ', layers('running'))).toEqual({ says: 'Writing now.', mark: 'writing' })
     expect(notVerified(undefined, layers('pending'))).toEqual({
       says: 'Not started. Listed once the checks finish.', mark: 'not_started',
     })
     expect(notVerified(null, layers('failed'))).toMatchObject({ mark: 'not_started' })
     expect(notVerified(null, layers('failed')).says).toMatch(/^The code review failed/)
-    expect(notVerified(null, layers('skipped'))).toMatchObject({ mark: 'not_started' })
+    expect(notVerified(null, layers('skipped'))).toMatchObject({ mark: 'none_recorded' })
     expect(notVerified(null, layers('skipped')).says).toMatch(/^The code review was skipped/)
   })
 
