@@ -803,7 +803,7 @@ review-desk message list --review "$REVIEW"             # the whole conversation
 
 | Who | Can | Through |
 | -- | -- | -- |
-| The developer | ask, on any step | the conversation fold under the strip on every review page |
+| The developer | ask, about a tab or a finding on it | *Ask this review*, the column beside every tab of a review (DEV-1333). It is read only when Allele has no reading of the session |
 | The developer | send the draft back | the draft page's own button, whose note is kept in the conversation too |
 | A session | read, mark read, reply | these three commands |
 
@@ -1993,7 +1993,7 @@ screen, and every write the five screens make.
 | Screen | Reads | Writes |
 | -- | -- | -- |
 | Pull requests | `GET /inbox` and `GET /reviews?show=finished` (shared with the sidebar, for *Done*); `GET /reviews/{id}` for the selected row's preview; under *Every review*, `GET /reviews?repo=&show=` | `POST /reviews` |
-| One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` and `GET /reviews/{id}/messages` every five seconds for the strip and the conversation under the trail | `POST …/messages`, `POST …/fresh-session`, `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
+| One review | `GET /reviews/{id}`, and `GET /reviews/{id}/session` and `GET /reviews/{id}/messages` every five seconds for the strip and *Ask this review* beside the tab | `POST …/messages`, `POST …/fresh-session`, `POST …/brief/confirm`, `PATCH …/findings/{seq}`, `POST …/dismiss`, `POST …/restore`, `DELETE /reviews/{id}` |
 | Draft preview | `GET /reviews/{id}/draft` — the body as it will post, the blocks it is composed of, and the inline threads with the line each sits on | `PUT …/draft`, `POST …/draft/approve`, `POST …/draft/send-back`, `POST …/held-back/ticket` |
 | Rules | `GET /rules?repo=`, `GET /repos` | `POST /rules/{id}/promote`, `/dismiss`, `/retire`, `/defer` |
 

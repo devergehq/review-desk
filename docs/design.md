@@ -88,11 +88,12 @@ first column. Six rules it keeps, each in the file that holds it:
   pages and nowhere else; absent is silent, as on the review's own strip. `agentLine`.
 - **Two places in the navigation, Pull requests and Rules.** Reviews was a third until the
   one list landed (DEV-1325); `/reviews` redirects to that list's *Every review* view.
-- **The conversation's column is drawn empty** on a review's pages until the second stack fills
-  it, and not at all under 1,100px while it is empty. Under 700px the shell is one column: the
-  sidebar behind a menu button that closes on Escape, the sample-data marker in the bar, no
-  conversation column (S14 is a bottom sheet). `web/e2e/shell.spec.ts` measures all of it at
-  1,600, 1,280, 1,024 and 390.
+- **The conversation's column holds *Ask this review*** on a review's pages (DEV-1333): the
+  layout draws the column and the review's page teleports `ConversationPanel` into it. Between
+  700 and 1,100px it sits under the page, at the main column's width. Under 700px the shell is
+  one column: the sidebar behind a menu button that closes on Escape, the sample-data marker
+  in the bar, no conversation column (S14 is a bottom sheet, DEV-1336). `web/e2e/shell.spec.ts`
+  measures all of it at 1,600, 1,280, 1,024 and 390.
 
 **Queue and Reviews are one list, Pull requests** (DEV-1325, S1 and S17), at `/`:
 
@@ -168,6 +169,27 @@ by the developer. **Who answers is the developer's choice, and Review Desk never
 or drives Claude on its own** (S11): with Allele the conversation is two way; with the
 developer's own session it is one way, and the developer asks there; with neither it is read
 only. Under 700px wide the conversation is a bottom sheet (S14).
+
+## Ask this review is the conversation, drawn as the contract shapes it
+
+**S6's panel beside every tab** (DEV-1333), drawing what `GET /reviews/{id}/messages` served
+and never re-checking it. Each rule is in the file named:
+
+- **Who is answering is one helper**, `answering` in `web/app/utils/answering.ts`, read off
+  Allele's reading of the session and nothing else: a reading is two way, none is read only
+  (*No agent connected · you can read, not ask*). Every question, the box's and *Ask it again,
+  in the format*, leaves through the panel's one `send`, which asks `asksFromHere` first.
+- **A reply is drawn in the shape the server parsed**: the headline, each point after its
+  basis, the cites, *not sure*, the suggestions inert; `working` as its activity steps; `cant`
+  as *can't answer yet*; a reply that did not parse folded after ~200 characters with one
+  button. A reply the server marks `superseded_by` is not drawn. `web/app/components/ConversationReply.vue`.
+- **A cite is a link only when the record holds what it names**, and the session's words
+  otherwise: `citeTarget` in `web/app/utils/cites.ts`. `F9` selects the finding through
+  `findingPath`.
+- **The questions an empty conversation starts with are offered only when the record holds
+  their reason**, and *Asked so far* counts the developer's questions by the tab each was
+  about. `suggestedQuestions` and `askedSoFar` in `web/app/utils/conversation.ts`.
+- **Nothing in it is sized to the column**, so the phone's sheet hosts the same component.
 
 ## Two kinds of screen
 

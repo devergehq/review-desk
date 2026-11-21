@@ -389,6 +389,13 @@ export interface DeskSource {
   /** What Allele would tell the server about each running session, by review id. */
   session_liveness: Record<string, boolean | null>
   /**
+   * Allele's reading of a review's session, by review id, **for tests only**. Empty when the
+   * desk loads, so sample mode reads as a machine without Allele: no fixture says what a
+   * session is doing. A test puts one here through `resetDesk` to reach the conversation's
+   * two-way states. DEV-1333.
+   */
+  session_readings?: Record<string, SessionReading>
+  /**
    * Whether the server could read GitHub. It stands in for the developer's environment —
    * `gh` present and logged in — which is what `POST /reviews` needs to resolve a head
    * commit, and which no fixture of the record itself could express.
