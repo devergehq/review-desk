@@ -3350,7 +3350,7 @@ test.describe('a database with nothing in it', () => {
   test('all five pages read as new rather than as broken', async ({ page }) => {
     await page.goto(empty)
     await expect(page.getByRole('heading', { name: 'Nothing here yet' })).toBeVisible()
-    await expect(page.getByText('This database holds no reviews')).toBeVisible()
+    await expect(page.getByText('Nothing is on the desk')).toBeVisible()
     /* The one thing that fills it, with the field to do it from. */
     await expect(page.locator('input#start-empty')).toBeVisible()
 

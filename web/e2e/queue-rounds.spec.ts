@@ -702,7 +702,35 @@ test('J and K walk the list, and Enter opens the selected row’s Overview', asy
   await page.locator('body').press('k')
   await expect(rows.first()).toHaveClass(/queue-line--selected/)
 
+  /*
+   * **A pointer resting on a row does not take the selection back from J** (self-review
+   * round 1, F7): J scrolls, which slides a row under a pointer that has not moved, and the
+   * browser reports that as the pointer arriving. It selects only once it moves and rests.
+   */
+  await rows.first().hover()
+  await expect(rows.first()).toHaveClass(/queue-line--selected/)
+  await page.locator('body').press('j')
+  await expect(rows.nth(1)).toHaveClass(/queue-line--selected/)
+  await page.waitForTimeout(400)
+  await expect(rows.nth(1), 'still the row J chose').toHaveClass(/queue-line--selected/)
+  await page.locator('body').press('k')
+  await expect(rows.first()).toHaveClass(/queue-line--selected/)
+
   const href = await rows.first().locator('.row').getAttribute('href')
   await page.locator('body').press('Enter')
   await expect(page).toHaveURL(`${serving.url}${href!.slice(1)}`)
+})
+
+test('the arrow keys move between the list’s tabs', async ({ page }) => {
+  /* Self-review round 1, F1: a keyboard reached only the open tab. */
+  await queue(page)
+  await page.getByRole('tab', { name: /^Waiting on you/ }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page).toHaveURL(/\?view=reviewing$/)
+  await expect(page.getByRole('tab', { name: /^Being reviewed/ })).toBeFocused()
+  await page.keyboard.press('End')
+  await expect(page).toHaveURL(/\?view=every$/)
+  await page.keyboard.press('Home')
+  await expect(page.getByRole('tab', { name: /^Waiting on you/ })).toBeFocused()
+  await expect(page.locator('#panel-waiting')).toBeVisible()
 })

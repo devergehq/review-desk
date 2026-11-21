@@ -1571,12 +1571,50 @@ watch(currentRows, (list) => {
 const selectedRow = computed(() =>
   currentRows.value.find(row => row.key === selected.value) ?? null)
 
-/** A pointer resting on a row, or focus arriving in one, selects it. */
-function selectFrom(event: Event) {
-  const holder = (event.target as Element | null)?.closest?.('[data-row-key]')
-  const key = holder?.getAttribute('data-row-key')
-  if (key && currentRows.value.some(row => row.key === key)) selected.value = key
+/** The row a holder element is, when it is one the open tab draws. */
+function rowKeyOf(target: EventTarget | null): string | null {
+  const holder = (target as Element | null)?.closest?.('[data-row-key]')
+  const key = holder?.getAttribute('data-row-key') ?? null
+  return key && currentRows.value.some(row => row.key === key) ? key : null
 }
+
+/** Focus arriving in a row selects it at once: a keyboard means it. */
+function selectFromFocus(event: FocusEvent) {
+  const key = rowKeyOf(event.target)
+  if (key) selected.value = key
+}
+
+/*
+ * **A pointer selects a row once it rests there, and only if it moved to get there.**
+ *
+ * Two findings of the self-review, round 1. A pointer swept down the list selected every row
+ * it crossed, and each selection is a read of that review for the preview — ten rows, ten
+ * reads, ten flashes of "Reading the review…" (F6). So it waits 120ms, which a sweep does not
+ * and a reader does. And `J` scrolls the selected row into view, which slides a different
+ * row under a pointer that has not moved; the browser reports that as the pointer entering
+ * the row, and the selection snapped back to it (F7). So a pointer selects only from a
+ * position other than where it was when a key last moved the selection.
+ */
+const RESTS_MS = 120
+let resting: ReturnType<typeof setTimeout> | null = null
+let pointer = { x: -1, y: -1 }
+let pointerAtKey = { x: -2, y: -2 }
+
+function selectFromPointer(event: MouseEvent) {
+  pointer = { x: event.clientX, y: event.clientY }
+  if (pointer.x === pointerAtKey.x && pointer.y === pointerAtKey.y) return
+  const key = rowKeyOf(event.target)
+  if (resting) clearTimeout(resting)
+  if (!key) return
+  resting = setTimeout(() => {
+    resting = null
+    selected.value = key
+  }, RESTS_MS)
+}
+
+onBeforeUnmount(() => {
+  if (resting) clearTimeout(resting)
+})
 
 /** Open a row: its review's Overview, or the pull request on GitHub when there is no review. */
 function open(row: ListRow | null) {
@@ -1610,6 +1648,8 @@ function onKey(event: KeyboardEvent) {
   const key = event.key.toLowerCase()
   if (key === 'j' || key === 'k') {
     event.preventDefault()
+    pointerAtKey = { ...pointer }
+    if (resting) clearTimeout(resting)
     selected.value = moveSelection(currentRows.value, selected.value, key === 'j' ? 1 : -1)
     void nextTick(focusSelected)
     return
@@ -1727,7 +1767,38 @@ function requestedState(item: InboxAwaitingSessionItem): ReviewState {
  * record holding reviews. Found by the end-to-end run on an empty database.
  */
 function emptyHere(data: Inbox): boolean {
-  return view.value !== 'every' && isEmpty(data)
+  /*
+   * **And never over a desk whose only reviews finished this week** (self-review round 1,
+   * F2): the inbox leaves them out, so `isEmpty` called that desk empty while the sidebar
+   * listed them under *Done this week*. Those rows are the *Done* tab's and S17's to draw.
+   */
+  return view.value !== 'every' && isEmpty(data) && doneRows.value.length === 0
+}
+
+/**
+ * **The tabs' own keys, as the ARIA tabs pattern has them**: Left and Right move to the
+ * previous and next tab, Home and End to the first and last, and the tab is opened as focus
+ * reaches it. Self-review round 1, F1: the tabs used a roving tabindex and nothing answered
+ * the arrows, so a keyboard reached only the open tab — and five of six, *Every review* and
+ * its dismissed reviews among them, were out of its reach.
+ */
+function onTabKey(event: KeyboardEvent) {
+  const at = LIST_VIEWS.findIndex(one => one.view === view.value)
+  const last = LIST_VIEWS.length - 1
+  const to = event.key === 'ArrowRight'
+    ? (at + 1) % LIST_VIEWS.length
+    : event.key === 'ArrowLeft'
+      ? (at + last) % LIST_VIEWS.length
+      : event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? last
+          : null
+  if (to == null) return
+  event.preventDefault()
+  const next = LIST_VIEWS[to]!.view
+  view.value = next
+  void nextTick(() => document.getElementById(`tab-${next}`)?.focus())
 }
 </script>
 
@@ -1735,8 +1806,9 @@ function emptyHere(data: Inbox): boolean {
   <div class="pull-requests">
     <div
       class="list"
-      @mouseover="selectFrom"
-      @focusin="selectFrom"
+      @mouseover="selectFromPointer"
+      @mousemove="selectFromPointer"
+      @focusin="selectFromFocus"
     >
       <DeskState
         :resource="inbox"
@@ -1789,6 +1861,7 @@ function emptyHere(data: Inbox): boolean {
               :aria-controls="`panel-${tab.view}`"
               :tabindex="view === tab.view ? 0 : -1"
               @click="view = tab.view"
+              @keydown="onTabKey"
             >
               {{ tab.label }}<span
                 v-if="tab.view !== 'every'"
@@ -1983,7 +2056,7 @@ function emptyHere(data: Inbox): boolean {
                 Which of the two kinds of row this is, as the queue said it. The group's note
                 says the rest: Review Desk does not start a session.
               -->
-                <span class="rd-meta what-detail">{{ item.review_id == null ? 'Waiting for a session · ' : '' }}{{
+                <span class="rd-meta what-detail">{{
                   item.review_id == null
                     ? 'no round has been opened'
                     : 'no session is working on it'
@@ -2192,7 +2265,7 @@ function emptyHere(data: Inbox): boolean {
               Nothing here yet
             </h1>
             <p class="rd-note rd-measure">
-              This database holds no reviews. A review turns up here once an agent session has
+              Nothing is on the desk. A review turns up here once an agent session has
               recorded one — it writes the brief and the findings through
               <code class="rd-mono">review-desk</code>, and what is waiting on you appears in
               this list.

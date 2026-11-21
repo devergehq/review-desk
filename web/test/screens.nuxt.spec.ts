@@ -1351,7 +1351,12 @@ describe('the queue', () => {
     const text = page.text()
 
     expect(text).toContain('Nothing here yet')
-    expect(text).toContain('This database holds no reviews')
+    /*
+     * **"Nothing is on the desk"**, which the inbox can say, and it was "This database holds
+     * no reviews", which it cannot: a dismissed review is in no inbox array (self-review of
+     * DEV-1325, round 1, F2). The card links *Every review* for the ones that left.
+     */
+    expect(text).toContain('Nothing is on the desk')
     /* And it says the one thing that fills it, with the field to do it from. */
     expect(text).toContain('review-desk')
     expect(page.find('input#start-empty').exists()).toBe(true)
@@ -2882,7 +2887,8 @@ describe('a pull request nobody has picked up', () => {
     expect(row.find('.meta-text').text())
       .toBe('acme/billing-api')
     expect(row.text()).toContain('no round has been opened')
-    expect(row.text()).toContain('Waiting for a session')
+    /* *Not started*, the sidebar's word for a request with no round (DEV-1325, review F4). */
+    expect(row.text()).toContain('Not started')
 
     /*
      * **The pull request is the way out, and the only one.** There is no review page to
@@ -3408,8 +3414,20 @@ describe('a pull request nobody has picked up', () => {
  * unchanged; these are the rules the one list adds.
  */
 describe('the Pull requests list', () => {
+  /*
+   * **The clock, pinned two days after `globex/portal#9568` merged** (11 October 2026), so
+   * *Done this week* holds a row. Against the real clock it is empty, and the *Done* half of
+   * the membership test compared two empty lists — the self-review's round-1 F3. Only `Date`
+   * is faked: `settle` runs on real timers.
+   */
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-13T12:00:00Z'))
     await resetDesk()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   /** The pull request numbers one tab's panel draws, in order. */
@@ -3441,6 +3459,36 @@ describe('the Pull requests list', () => {
         .toEqual(sidebarNumbers(layout, group).sort())
     }
     expect(panelNumbers(page, 'waiting').length).toBeGreaterThan(0)
+    expect(panelNumbers(page, 'done'), 'a Done row, so this half compares something').toContain('9568')
+  })
+
+  it('draws S17, not the empty-database card, on a desk whose only review finished this week', async () => {
+    const source = loadSource()
+    await resetDesk({
+      reviews: source.reviews.filter(detail => detail.review.pr === 9568),
+      drafts: [],
+      rules: [],
+      own_prs: [],
+      review_requests: [],
+    })
+    const page = await shown(Inbox)
+    expect(page.text()).not.toContain('Nothing here yet')
+    const lines = page.findAll('[data-testid="nothing-needs-you"] .nothing-group').map(one => one.text())
+    expect(lines[3]).toContain('Done this week · 1')
+    expect(lines[3]).toContain('1 merged')
+    expect(tabCount(page, 'Done')).toBe(1)
+  })
+
+  it('opens the next tab with the arrow keys, and the first and last with Home and End', async () => {
+    const page = await shown(Inbox)
+    const push = vi.spyOn(page.vm.$router, 'push')
+    await page.find('#tab-waiting').trigger('keydown', { key: 'ArrowRight' })
+    expect(push).toHaveBeenLastCalledWith({ query: { view: 'reviewing' } })
+    await page.find('#tab-waiting').trigger('keydown', { key: 'ArrowLeft' })
+    expect(push).toHaveBeenLastCalledWith({ query: { view: 'every' } })
+    await page.find('#tab-waiting').trigger('keydown', { key: 'End' })
+    expect(push).toHaveBeenLastCalledWith({ query: { view: 'every' } })
+    push.mockRestore()
   })
 
   it('draws each row’s state word from stateWord, the sidebar’s word for it', async () => {
@@ -3482,7 +3530,8 @@ describe('the Pull requests list', () => {
     const page = await shown(Inbox)
     const rows = page.findAll('#panel-waiting .queue-line')
     for (const one of rows) {
-      await one.trigger('mouseover')
+      /* Focus selects at once; a pointer waits for a rest (review F6). */
+      await one.find('.row').trigger('focusin')
       await settle(page)
       const id = Number(one.find('.row').attributes('href')!.split('/').pop())
       const brief = loadSource().reviews.find(detail => detail.review.id === id)?.brief
@@ -3553,6 +3602,7 @@ describe('the Pull requests list', () => {
     await resetDesk({ reviews: dismissed, drafts: [], rules: [], own_prs: [], review_requests: [] })
     const card = await shown(Inbox)
     expect(card.text()).toContain('Nothing here yet')
+    expect(card.text(), 'no claim the inbox cannot make').not.toContain('This database holds no reviews')
     expect(card.find('a[href="/?view=every"]').exists()).toBe(true)
 
     const page = await shown(Inbox, { route: '/?view=every' })

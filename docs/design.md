@@ -154,7 +154,8 @@ documents, and the shell itself is capped at `--rd-shell-wide`.
 
 | Screen | Kind | Width |
 | -- | -- | -- |
-| Pull requests, Rules, one review, the case, What happened | Document | The main column, capped at `--rd-shell-max`, 1,240px |
+| Rules, one review, the case, What happened | Document | The main column, capped at `--rd-shell-max`, 1,240px |
+| Pull requests | List beside its preview | All of the main column (`split: true`): the rows take what the 380px preview leaves, the shell is capped at `--rd-shell-wide` |
 | Code review, Draft | Workbench | All of the main column; the shell around it is capped at `--rd-shell-wide`, 1,600px |
 
 **On a review's page the split is not observable under the shell**: beside the 232px sidebar and
