@@ -9,13 +9,20 @@
 //! | Claude's print flag, short or long, after its name | everywhere | running Claude headless |
 //! | the streaming JSON format's name | everywhere | driving Claude over a pipe |
 //! | Claude's name as a quoted program: the bare name, a command line starting with it, or a path ending in it | everywhere | starting Claude, whatever the call looks like |
+//! | Claude Code's package name | everywhere | starting Claude through a package runner |
 //! | Claude's dot-directory as a path component | everywhere | reading the developer's Claude files or login |
-//! | a process API: `std`/`tokio` `process::Command` however imported or aliased, `Command::new`, `posix_spawn`, `exec*` | shipped Rust, `crates/*/src` | spawning anything; `gh` is the one there is, pinned by count |
-//! | a process API: `child_process`, `execa`, `Bun.spawn`, `Deno.Command` | shipped web code, `web/app` and `web/nuxt.config.ts` | the dashboard spawns nothing |
+//! | a process module (`std`, `tokio`, `async-std`, `smol` and the process crates), however imported or aliased, `Command::new`, and the libc calls that start one (`exec*`, `fork`, `posix_spawn`, `popen`, `system`) | every Rust file under `crates/` but its `tests/`: `src`, `build.rs` and any crate added later | spawning anything; `gh` is the one there is, pinned by count. `std::process::ExitCode` and `exit` are not process APIs and are allowed |
+//! | `child_process`, `execa`, `process.getBuiltinModule`, `Bun.spawn`, `Deno.Command` | every file under `web/` but `test`, `e2e`, `scripts` and the lockfile | the dashboard and its server spawn nothing |
 //!
-//! The code rules are matched on the file with **all whitespace removed**, so a space before a
-//! parenthesis or a line break inside an import changes nothing; the prose rules are matched
-//! with whitespace collapsed to one space.
+//! **Claude's name is matched in any case**, because macOS's file system is not
+//! case-sensitive and `.Claude` reaches the same directory. The code rules are matched on the
+//! file with **all whitespace removed**, so a space before a parenthesis or a line break inside an
+//! import changes nothing; the prose rules are matched with whitespace collapsed to one space.
+//!
+//! **What no text check can catch: a name assembled at run time** — `"cla" + "ude"`, or a
+//! module name built from pieces and loaded dynamically. That is what review is for; this test
+//! raises the cost of doing it by accident, not by intent. It catches the dynamic loader in
+//! the dashboard (`getBuiltinModule`) so that route at least has to be argued for.
 //!
 //! **This file excludes itself by path**: [`this_file`] is this file's location, made from
 //! `CARGO_MANIFEST_DIR` rather than typed, and the walk skips exactly that path. It names the
@@ -35,8 +42,8 @@
 //!
 //! Test code (`crates/*/tests`, `web/test`, `web/e2e`, `web/scripts`) is outside the two
 //! process-API rules: it spawns the binary under test, the type generator, and `hostname` or
-//! `ifconfig` to find an address to bind. None of it ships, and the other four rules still
-//! apply to it.
+//! `ifconfig` to find an address to bind. None of it ships, and the other rules still apply
+//! to it.
 
 use std::path::{Path, PathBuf};
 
@@ -80,11 +87,13 @@ fn is_recorded(relative: &str) -> bool {
         .is_some_and(|name| !name.contains('/') && name.ends_with(".json"))
 }
 
-/// One file, three ways: as written, whitespace collapsed to one space, and whitespace gone.
+/// One file, four ways: as written, whitespace gone, and lowercased with and without its whitespace collapsed.
 struct Text {
     raw: String,
-    collapsed: String,
     stripped: String,
+    /// `raw` lowercased, and lowercased with whitespace collapsed, for Claude's name in any case.
+    lower: String,
+    lower_collapsed: String,
 }
 
 impl Text {
@@ -93,8 +102,9 @@ impl Text {
         let collapsed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
         let stripped = raw.split_whitespace().collect::<String>();
         Text {
+            lower: raw.to_lowercase(),
+            lower_collapsed: collapsed.to_lowercase(),
             raw,
-            collapsed,
             stripped,
         }
     }
@@ -107,8 +117,8 @@ fn count(haystack: &str, needle: &str) -> usize {
 const CLAUDE: &str = concat!("cla", "ude");
 
 fn print_flag(text: &Text) -> usize {
-    count(&text.collapsed, &format!("{CLAUDE} -p"))
-        + count(&text.collapsed, &format!("{CLAUDE} --{}", "print"))
+    count(&text.lower_collapsed, &format!("{CLAUDE} -p"))
+        + count(&text.lower_collapsed, &format!("{CLAUDE} --{}", "print"))
 }
 
 fn stream_json(text: &Text) -> usize {
@@ -120,22 +130,27 @@ fn quoted_program(text: &Text) -> usize {
     ['"', '\'', '`']
         .iter()
         .map(|quote| {
-            count(&text.raw, &format!("{quote}{CLAUDE}{quote}"))
-                + count(&text.raw, &format!("{quote}{CLAUDE} "))
-                + count(&text.raw, &format!("/{CLAUDE}{quote}"))
+            count(&text.lower, &format!("{quote}{CLAUDE}{quote}"))
+                + count(&text.lower, &format!("{quote}{CLAUDE} "))
+                + count(&text.lower, &format!("/{CLAUDE}{quote}"))
         })
         .sum()
+}
+
+/// Claude Code's package, `@anthropic-ai/claude-code`, as `npx` or a runner would name it.
+fn package_name(text: &Text) -> usize {
+    count(&text.lower, &format!("{CLAUDE}-{}", "code"))
 }
 
 /// `.claude` where it starts a path component: not `docs.claude.com`, but `~/.claude`,
 /// `".claude"`, `/.claude/` and `.join(".claude")`.
 fn dot_directory(text: &Text) -> usize {
     let needle = format!(".{CLAUDE}");
-    text.raw
-        .match_indices(&needle)
+    let text = &text.lower;
+    text.match_indices(&needle)
         .filter(|(at, _)| {
-            let before = text.raw[..*at].chars().next_back();
-            let after = text.raw[at + needle.len()..].chars().next();
+            let before = text[..*at].chars().next_back();
+            let after = text[at + needle.len()..].chars().next();
             let starts_a_component =
                 before.is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '.');
             let ends_a_component =
@@ -145,33 +160,58 @@ fn dot_directory(text: &Text) -> usize {
         .count()
 }
 
-/// Any way shipped Rust reaches a process API, whitespace removed.
+/// Any way Rust reaches a process API, whitespace removed.
+///
+/// The process modules themselves, not their items, so an alias (`use std::process as p`)
+/// or a type alias over one is still a use of the module. `ExitCode` and `exit` end this
+/// process rather than starting another, and are not counted.
 fn rust_process(text: &Text) -> usize {
     let stripped = &text.stripped;
-    // `process::Command` in a path, an import or an alias, and `Command` inside a
-    // `process::{…}` import list.
-    let in_lists = stripped
-        .match_indices("process::{")
+    let modules: usize = [
+        "std::process",
+        "tokio::process",
+        "async_std::process",
+        "async_process",
+        "smol::process",
+        "duct::",
+        "subprocess::",
+    ]
+    .iter()
+    .map(|module| count(stripped, module))
+    .sum();
+    let harmless =
+        count(stripped, "std::process::ExitCode") + count(stripped, "std::process::exit(");
+    // `use std::{fs, process, …}` and `use std::{process::Command}`.
+    let in_std_lists = stripped
+        .match_indices("std::{")
         .filter(|(at, _)| {
-            let list = &stripped[at + "process::{".len()..];
+            let list = &stripped[at + "std::{".len()..];
             let list = &list[..list.find('}').unwrap_or(list.len())];
-            list.split(',')
-                .any(|item| item == "Command" || item.starts_with("Commandas"))
+            list.split(',').any(|item| {
+                item == "process" || item.starts_with("process::") || item.starts_with("processas")
+            })
         })
         .count();
-    count(stripped, "process::Command")
-        + in_lists
-        + count(stripped, "Command::new(")
-        + count(stripped, "posix_spawn")
-        + count(stripped, "libc::exec")
-        + count(stripped, "libc::fork")
-        + count(stripped, "nix::unistd::exec")
+    let calls: usize = [
+        "Command::new(",
+        "posix_spawn",
+        "execv",
+        "execl",
+        "fork(",
+        "popen(",
+        "libc::system(",
+    ]
+    .iter()
+    .map(|call| count(stripped, call))
+    .sum();
+    modules.saturating_sub(harmless) + in_std_lists + calls
 }
 
 /// Any way the dashboard's shipped code reaches a process API.
 fn web_process(text: &Text) -> usize {
     count(&text.raw, &format!("child_{}", "process"))
         + count(&text.raw, &format!("exe{}", "ca"))
+        + count(&text.stripped, "getBuiltinModule")
         + count(&text.stripped, "Bun.spawn")
         + count(&text.stripped, "Deno.Command")
 }
@@ -181,20 +221,39 @@ struct Refused {
     name: &'static str,
     why: &'static str,
     found: fn(&Text) -> usize,
-    /// Only files under these root-relative prefixes are read for it; empty is everywhere.
-    only_under: &'static [&'static str],
+    /// Whether a root-relative path is read for it.
+    applies: fn(&str) -> bool,
     /// Root-relative files allowed to hold it, how many times, and why.
     allowed: &'static [(&'static str, usize, &'static str)],
 }
 
-const SHIPPED_RUST: &[&str] = &[
-    "crates/cli/src/",
-    "crates/harvest/src/",
-    "crates/server/src/",
-    "crates/store/src/",
-];
+fn everywhere(_: &str) -> bool {
+    true
+}
 
-const SHIPPED_WEB: &[&str] = &["web/app/", "web/nuxt.config.ts"];
+/// Every Rust file under `crates/` but a crate's `tests/`: `src`, `build.rs`, and a crate
+/// nobody has written yet.
+fn rust_that_ships(relative: &str) -> bool {
+    let Some(rest) = relative.strip_prefix("crates/") else {
+        return false;
+    };
+    let inside_the_crate = rest.split_once('/').map_or("", |(_, inside)| inside);
+    relative.ends_with(".rs") && !inside_the_crate.starts_with("tests/")
+}
+
+/// Every file under `web/` but its tests, its scripts and the lockfile, which names the
+/// packages the tests use.
+fn web_that_ships(relative: &str) -> bool {
+    relative.starts_with("web/")
+        && ![
+            "web/test/",
+            "web/e2e/",
+            "web/scripts/",
+            "web/pnpm-lock.yaml",
+        ]
+        .iter()
+        .any(|out| relative.starts_with(out))
+}
 
 fn refused() -> Vec<Refused> {
     vec![
@@ -202,40 +261,47 @@ fn refused() -> Vec<Refused> {
             name: "Claude's print flag",
             why: "runs Claude headless",
             found: print_flag,
-            only_under: &[],
+            applies: everywhere,
             allowed: &[],
         },
         Refused {
             name: "the streaming JSON format",
             why: "drives Claude over a pipe",
             found: stream_json,
-            only_under: &[],
+            applies: everywhere,
             allowed: &[],
         },
         Refused {
             name: "Claude's name as a quoted program",
             why: "starts Claude",
             found: quoted_program,
-            only_under: &[],
+            applies: everywhere,
+            allowed: &[],
+        },
+        Refused {
+            name: "Claude Code's package name",
+            why: "starts Claude through a package runner",
+            found: package_name,
+            applies: everywhere,
             allowed: &[],
         },
         Refused {
             name: "Claude's dot-directory",
             why: "reaches into the developer's Claude files or login",
             found: dot_directory,
-            only_under: &[],
+            applies: everywhere,
             allowed: &[],
         },
         Refused {
             name: "a process API in shipped Rust",
             why: "spawns a process",
             found: rust_process,
-            only_under: SHIPPED_RUST,
-            // The `use std::process::{Command, Stdio}` and the one `Command::new(&self.program)`:
-            // two, and a third anywhere in the file fails.
+            applies: rust_that_ships,
+            // `use std::process::{Command, Stdio}`, the one `Command::new(&self.program)`, and
+            // the `std::process::Output` its test double builds: three, and a fourth fails.
             allowed: &[(
                 "crates/harvest/src/gh.rs",
-                2,
+                3,
                 "the harvest reads GitHub through `gh`, the one process Review Desk runs",
             )],
         },
@@ -243,7 +309,7 @@ fn refused() -> Vec<Refused> {
             name: "a process API in the dashboard",
             why: "spawns a process from the dashboard",
             found: web_process,
-            only_under: SHIPPED_WEB,
+            applies: web_that_ships,
             allowed: &[],
         },
     ]
@@ -308,12 +374,7 @@ fn breaches(root: &Path) -> Vec<String> {
         };
         let text = Text::of(&bytes);
         for rule in &rules {
-            if !rule.only_under.is_empty()
-                && !rule
-                    .only_under
-                    .iter()
-                    .any(|under| relative.starts_with(under))
-            {
+            if !(rule.applies)(&relative) {
                 continue;
             }
             let n = (rule.found)(&text);
@@ -402,15 +463,52 @@ fn every_way_of_writing_it_is_caught() {
             format!("fn h() {{ let _ = \"{c}\"; }}\n"),
         ),
         ("crates/cli/tests/f.rs", format!("const FLAG: &str = \"{c}  --{}\";\n", "print")),
+        // Round 2's plants: a fifth crate, Rust outside `src`, the module aliased, libc in
+        // braces, the package runner, Claude's name in capitals, and the dashboard's server.
+        (
+            "crates/runner/src/lib.rs",
+            "fn r() { std::process::Command::new([\"cla\", \"ude\"].concat()); }\n".to_string(),
+        ),
+        (
+            "crates/server/build.rs",
+            "fn main() { let _ = std::process::Command::new(\"sh\"); }\n".to_string(),
+        ),
+        (
+            "crates/server/zz_helper.rs",
+            "use std::{fs, process};\n".to_string(),
+        ),
+        (
+            "crates/store/src/g.rs",
+            "use std::process as p;\ntype C = p::Command;\n".to_string(),
+        ),
+        ("crates/cli/src/h.rs", "use libc::{execvp};\n".to_string()),
+        (
+            "web/scripts/npx.mjs",
+            format!("execSync('npx @anthropic-ai/{c}-code -p hi')\n"),
+        ),
+        ("web/app/cap.ts", format!("join(home, '.{}', 'x')\n", "Cl".to_string() + &c[2..])),
+        ("web/app/upper.ts", format!("spawn('{}', [])\n", c.to_uppercase())),
+        (
+            "web/server/api/j.ts",
+            format!("import {{ spawn }} from 'node:child_{}'\n", "process"),
+        ),
+        (
+            "web/app/loader.ts",
+            "const cp = process.getBuiltinModule(name)\n".to_string(),
+        ),
         (
             "crates/harvest/src/gh.rs",
-            "use std::process::{Command, Stdio};\nfn a() { Command::new(&self.program); }\nfn b() { Command::new(\"x\"); }\n".to_string(),
+            "use std::process::{Command, Stdio};\nfn a() { Command::new(&self.program); }\nfn o() -> std::process::Output { todo!() }\nfn b() { Command::new(\"x\"); }\n".to_string(),
         ),
     ];
     for (path, body) in &cases {
         plant(path, body);
     }
     // Things that are not breaches: a domain, the product's name in prose, a CLI subcommand.
+    plant(
+        "crates/cli/src/exit.rs",
+        "use std::process::ExitCode;\nfn e() { std::process::exit(1) }\n",
+    );
     plant("web/app/fine.ts", &format!("const docs = 'https://docs.{c}.com'\nconst who = 'Your own Claude Code session'\nenum MessageCommand {{}}\n"));
     plant("web/node_modules/x/index.js", &format!("spawn('{c}')\n"));
     plant(
@@ -429,6 +527,7 @@ fn every_way_of_writing_it_is_caught() {
     }
     for path in [
         "web/app/fine.ts",
+        "crates/cli/src/exit.rs",
         "web/node_modules",
         "crates/harvest/tests/fixtures/blob.json",
     ] {
