@@ -1,6 +1,6 @@
 # S · the structured app
 
-**The design target from 21 November 2026.** Patrick, on seeing all sixteen screens: *"I honestly
+**The design target from 21 November 2026.** Patrick, on seeing the first sixteen screens: *"I honestly
 think it's perfect"* — the layout, the structure and the workflow. Typography and styling may
 still move; the layout, structure and workflow are settled. [`docs/design.md`](../../design.md)
 carries the rules these screens are drawn to; this folder is the pictures.
@@ -38,6 +38,8 @@ if `tokens.css` has nothing close, ask on the ticket rather than inventing a tok
 | S13 | `S13-one-way.webp` | `UnGrD` | The panel with no Allele: only what your session wrote | The panel |
 | S14 | `S14-phone-sheet.webp` | `C7bmP` | Phone: the conversation as a bottom sheet | Every review route under 700px |
 | S15 | `S15-replies-in.webp` | `xdmn6` | Overview when the author's replies and commits arrive | `/reviews/[id]` |
+| S16 | `S16-round-2-sign-off.webp` | `zDcGz` | Draft for round 2: what changed since round 1, lines moved with the code, signing against the head read | `/reviews/[id]/draft` |
+| S17 | `S17-nothing-needs-you.webp` | `ZQeYR` | The list when nothing waits on you: where everything else is, and what happened since yesterday | `/` |
 
 Old routes keep working as redirects to their new tab, so links in posted reviews and in Linear
 don't break.
