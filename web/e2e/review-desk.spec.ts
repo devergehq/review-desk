@@ -3915,7 +3915,8 @@ test.describe('taking a review off the desk', () => {
     })
   }
   test('a review that never started is deleted, after asking twice', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${requestedReviewId}`)
+    /* The case, and the card that takes a review off the desk, are on Understanding (DEV-1326). */
+    await page.goto(`${seeded}reviews/${requestedReviewId}/understanding`)
 
     /* Nothing has been written about it, which is the page this review has. */
     await expect(page.getByText('Nothing has been written about this problem yet')).toBeVisible()
@@ -4325,8 +4326,8 @@ test.describe('a round whose head moved', () => {
     ]) as unknown as { review: { id: number }, action: string }
     expect(two.action, 'round 1 posted, so this is a round of its own').toBe('created')
 
-    /* Dismissed through the dashboard: the developer's act, on the review's own page. */
-    await page.goto(`${seeded}reviews/${two.review.id}`)
+    /* Dismissed through the dashboard: the developer's act, on the case (Understanding since DEV-1326). */
+    await page.goto(`${seeded}reviews/${two.review.id}/understanding`)
     await page.getByRole('button', { name: 'Dismiss this review' }).click()
     await page.getByLabel(/Why are you dismissing/).fill('superseded, waiting for the rewrite')
     await page.getByRole('button', { name: 'Dismiss it' }).click()
@@ -4715,10 +4716,8 @@ test.describe('state that belongs to one review', () => {
     'draft': 'draft',
   }
 
-  /* Understand is where `byTheTrail` stops: the review's own address, which draws the case. */
-  const at = (id: number, step: string) => step === 'understand'
-    ? `${seeded}reviews/${id}`
-    : `${seeded}reviews/${id}/${TAB_OF[step]}${band(step)}`
+  /* Every step is a tab since DEV-1326: Overview is no longer the case, so Understand is too. */
+  const at = (id: number, step: string) => `${seeded}reviews/${id}/${TAB_OF[step]}${band(step)}`
 
   async function byTheTrail(page: Page, id: number, step: string): Promise<number> {
     /*
@@ -4736,10 +4735,8 @@ test.describe('state that belongs to one review', () => {
     await expect(page).toHaveURL(/\?view=every$/)
     await page.locator(`#panel-every a[href="/reviews/${id}"]`).first().click()
     await expect(page).toHaveURL(`${seeded}reviews/${id}`)
-    if (step !== 'understand') {
-      await (await openSteps(page)).locator(`a[href="/reviews/${id}/${TAB_OF[step]}${band(step)}"]`).click()
-      await expect(page).toHaveURL(at(id, step))
-    }
+    await (await openSteps(page)).locator(`a[href="/reviews/${id}/${TAB_OF[step]}${band(step)}"]`).click()
+    await expect(page).toHaveURL(at(id, step))
     return (await page.evaluate(() => history.length)) - before
   }
 
