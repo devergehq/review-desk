@@ -1486,7 +1486,7 @@ const viewRows = computed<Record<ListView, ListRow[]>>(() => ({
       pr: item.pull_request.pr,
       repo: item.pull_request.repo,
       title: item.pull_request.title ?? 'no title recorded',
-      state: 'not_started' as const,
+      state: requestedState(item),
       to: item.link.to,
       href: item.link.href,
       action: item.link.action,
@@ -1699,6 +1699,16 @@ function agentFacts(item: InboxInProgressItem): string {
   parts.push(`step ${item.layer_number} of ${item.layers_total}`)
   parts.push(sessionAction(item))
   return parts.filter(Boolean).join(' · ')
+}
+
+/**
+ * The state word of a row nobody is working on — **the sidebar's rule, read the same way**:
+ * a request GitHub made that no round exists of is *Not started*; a round opened and not
+ * picked up is *Waiting for a session*. `utils/sidebar.ts` chooses between the two on
+ * `review_id` too, so a pull request reads the same in both columns.
+ */
+function requestedState(item: InboxAwaitingSessionItem): ReviewState {
+  return item.review_id == null ? 'not_started' : 'waiting_for_session'
 }
 </script>
 
@@ -1948,13 +1958,13 @@ function agentFacts(item: InboxInProgressItem): string {
                 :ticket-id="item.ticket_id"
               >
                 <span class="what-title">
-                  <DeskPill>{{ stateWord('not_started') }}</DeskPill>
+                  <DeskPill>{{ stateWord(requestedState(item)) }}</DeskPill>
                 </span>
                 <!--
                 Which of the two kinds of row this is, as the queue said it. The group's note
                 says the rest: Review Desk does not start a session.
               -->
-                <span class="rd-meta what-detail">Waiting for a session · {{
+                <span class="rd-meta what-detail">{{ item.review_id == null ? 'Waiting for a session · ' : '' }}{{
                   item.review_id == null
                     ? 'no round has been opened'
                     : 'no session is working on it'
