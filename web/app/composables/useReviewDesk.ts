@@ -419,7 +419,9 @@ export function useReviewDesk() {
    * with this list (`sidebarGroups`), so they must group the same answer. Through `reviews()`
    * each caller built its own resource and read it on its own — two requests on every review
    * page, and two answers that could differ while one was in flight (DEV-1324's round-2
-   * self-review). A fixed key rather than a reactive one: neither caller has a picker.
+   * self-review). A fixed key rather than a reactive one: no caller has a picker. The Pull
+   * requests list's *Done* tab is the third reader (DEV-1325), the sidebar's group drawn as a
+   * tab, so it groups the same answer too.
    */
   function finishedReviews(): DeskResource<ReviewList> {
     return sharing('reviews:all:finished', () =>

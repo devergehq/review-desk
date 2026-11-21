@@ -1367,10 +1367,7 @@ function sessionLine(agent: InboxInProgressItem | null): string | null {
  * The finished reviews, for *Done* — **the sidebar's read and the sidebar's filter**, so the
  * tab and the group cannot disagree about which week a review finished in.
  */
-const finished = desk.reviews(
-  computed(() => ALL_REPOSITORIES),
-  computed(() => 'finished' as const),
-)
+const finished = desk.finishedReviews()
 
 /** The sidebar's four groups, over the same two reads. The tabs are checked against them. */
 const groups = computed(() =>
@@ -1676,11 +1673,10 @@ function focusStart() {
 }
 
 /**
- * The line under each table: the order, said out loud as the queue said it, and for *Being
- * reviewed* the two notes its groups carried — nothing there is the developer's to do, how
- * many with a session are already under *Waiting on you*, and that Review Desk does not start
- * a session. **Assembled as strings**, for `handledLine`'s reason: `<template v-if>`
- * fragments come out with doubled spaces.
+ * The line under each table: the order, said out loud as the queue said it. *Being
+ * reviewed*'s two groups carry their own notes beside their headings. **Assembled as
+ * strings**, for `handledLine`'s reason: `<template v-if>` fragments come out with doubled
+ * spaces.
  */
 const order = computed(() =>
   someTimesMissing.value ? 'Oldest first, and the rows with no recorded time last.' : 'Oldest first.')
@@ -1688,14 +1684,22 @@ const order = computed(() =>
 const waitingCaption = computed(() =>
   `${order.value} Times are from when the brief or the draft was ready, or when something came back.`)
 
-const reviewingCaption = computed(() => {
-  const said = [order.value]
-  said.push(agentNote.value === 'nothing for you to do'
-    ? 'Nothing here is for you to do.'
-    : `Nothing here is for you to do; ${agentNote.value}.`)
-  if (shown.value.requested.length) said.push('Review Desk does not start a session.')
-  return said.join(' ')
-})
+const reviewingCaption = computed(() => order.value)
+
+/**
+ * The facts line of a row a session is working on: **the step and how long it has lasted,
+ * where the session is in the seven, and what the record holds about the session** —
+ * "Code review · 20 min · step 4 of 7 · Session not seen for 20 min". The first two are
+ * what the queue's *With the agent* row said beside its bar; the bar's figure is the third,
+ * in words; the fourth was that row's action, and is the session folded into the state.
+ */
+function agentFacts(item: InboxInProgressItem): string {
+  const parts = [layerLabel(item.layer_name)]
+  if (item.in_state_since) parts.push(forLabel(item.in_state_since) ?? '')
+  parts.push(`step ${item.layer_number} of ${item.layers_total}`)
+  parts.push(sessionAction(item))
+  return parts.filter(Boolean).join(' · ')
+}
 </script>
 
 <template>
@@ -1789,7 +1793,7 @@ const reviewingCaption = computed(() => {
           </div>
 
           <!-- Waiting on you: the queue's Needs you, one row per pull request. -->
-          <div
+          <section
             v-show="view === 'waiting'"
             id="panel-waiting"
             role="tabpanel"
@@ -1856,13 +1860,13 @@ const reviewingCaption = computed(() => {
               </span>
               <span class="rd-meta what-detail">{{ row.detail }}</span>
             </QueueRow>
-          </div>
+          </section>
 
           <!--
             Being reviewed: the queue's With the agent, then its Requested, not started — the
             sidebar's group, which holds both. The session is said in the state cell.
           -->
-          <div
+          <section
             v-show="view === 'reviewing'"
             id="panel-reviewing"
             role="tabpanel"
@@ -1878,76 +1882,95 @@ const reviewingCaption = computed(() => {
             >
               No pull request is being reviewed.
             </p>
-            <QueueRow
-              v-for="item in shown.withAgent"
-              :key="item.newest_round.review_id"
-              :data-row-key="prKey(item)"
-              :selected="selected === prKey(item)"
-              :pr="item.pull_request.pr"
-              :title="item.newest_round.title ?? 'no title recorded'"
-              :meta="aboutAgent(item)"
-              :to="tabPath(item.newest_round.review_id, 'overview')"
-              action="Read the review"
-              action-tone="quiet"
-              :age="item.in_state_since ? sinceLabel(item.in_state_since) : null"
-              age-unknown-because="this review was recorded before Review Desk kept when a step started"
-              :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
-              :ticket-href="ticketUrl(item.newest_round.ticket_url)"
-              :ticket-id="item.newest_round.ticket_id"
+            <!--
+              **Its two groups, under the queue's own headings and notes.** The sidebar's
+              *Being reviewed* holds both; the tab keeps them apart because they are not the
+              same thing to know — a session is working on one, and nobody on the other.
+            -->
+            <DeskSection
+              v-if="shown.withAgent.length"
+              heading="With the agent"
+              :count="shown.withAgent.length"
+              :note="agentNote"
             >
-              <span class="what-title">
-                <DeskPill>{{ stateWord('being_written') }}</DeskPill>
-              </span>
-              <!--
+              <QueueRow
+                v-for="item in shown.withAgent"
+                :key="item.newest_round.review_id"
+                :data-row-key="prKey(item)"
+                :selected="selected === prKey(item)"
+                :pr="item.pull_request.pr"
+                :title="item.newest_round.title ?? 'no title recorded'"
+                :meta="aboutAgent(item)"
+                :to="tabPath(item.newest_round.review_id, 'overview')"
+                action="Read the review"
+                action-tone="quiet"
+                :age="item.in_state_since ? sinceLabel(item.in_state_since) : null"
+                age-unknown-because="this review was recorded before Review Desk kept when a step started"
+                :pr-href="prUrl(item.pull_request.repo, item.pull_request.pr)"
+                :ticket-href="ticketUrl(item.newest_round.ticket_url)"
+                :ticket-id="item.newest_round.ticket_id"
+              >
+                <span class="what-title">
+                  <DeskPill>{{ stateWord('being_written') }}</DeskPill>
+                </span>
+                <!--
                 **The session, folded into the state cell.** Its step, how long it has been on
                 it, and what the record holds about it — `activityLabel`, which said it in the
                 action column when this was the queue's With the agent group.
               -->
-              <span
-                class="rd-meta what-detail"
-                :class="{ 'session-warn': item.session_alive === false }"
-              >Session {{ sessionLine(item) }} · {{ sessionAction(item) }}</span>
-            </QueueRow>
-            <QueueRow
-              v-for="item in shown.requested"
-              :key="prKey(item)"
-              :data-row-key="prKey(item)"
-              :selected="selected === prKey(item)"
-              :pr="item.pull_request.pr"
-              :title="item.pull_request.title ?? 'no title recorded'"
-              :meta="aboutRequested(item)"
-              :to="item.link.to"
-              :href="item.link.href"
-              :action="item.link.action"
-              :action-tone="item.link.tone"
-              :age="sinceLabel(item.requested_at)"
-              :pr-href="item.link.prHref"
-              :ticket-href="ticketUrl(item.ticket_url)"
-              :ticket-id="item.ticket_id"
+                <span
+                  class="rd-meta what-detail"
+                  :class="{ 'session-warn': item.session_alive === false }"
+                >{{ agentFacts(item) }}</span>
+              </QueueRow>
+            </DeskSection>
+            <DeskSection
+              v-if="shown.requested.length"
+              heading="Requested, not started"
+              :count="shown.requested.length"
+              note="waiting for a session — Review Desk does not start one"
             >
-              <span class="what-title">
-                <DeskPill>{{ stateWord('not_started') }}</DeskPill>
-              </span>
-              <!--
-                What the queue's Requested, not started rows said, kept: which of the two kinds
-                of row this is, and the group's own note — Review Desk does not start a session.
+              <QueueRow
+                v-for="item in shown.requested"
+                :key="prKey(item)"
+                :data-row-key="prKey(item)"
+                :selected="selected === prKey(item)"
+                :pr="item.pull_request.pr"
+                :title="item.pull_request.title ?? 'no title recorded'"
+                :meta="aboutRequested(item)"
+                :to="item.link.to"
+                :href="item.link.href"
+                :action="item.link.action"
+                :action-tone="item.link.tone"
+                :age="sinceLabel(item.requested_at)"
+                :pr-href="item.link.prHref"
+                :ticket-href="ticketUrl(item.ticket_url)"
+                :ticket-id="item.ticket_id"
+              >
+                <span class="what-title">
+                  <DeskPill>{{ stateWord('not_started') }}</DeskPill>
+                </span>
+                <!--
+                Which of the two kinds of row this is, as the queue said it. The group's note
+                says the rest: Review Desk does not start a session.
               -->
-              <span class="rd-meta what-detail">{{
-                item.review_id == null
-                  ? 'no round has been opened'
-                  : 'no session is working on it'
-              }} · waiting for a session</span>
-            </QueueRow>
+                <span class="rd-meta what-detail">Waiting for a session · {{
+                  item.review_id == null
+                    ? 'no round has been opened'
+                    : 'no session is working on it'
+                }}</span>
+              </QueueRow>
+            </DeskSection>
             <p
               v-if="viewRows.reviewing.length"
               class="rd-meta caption"
             >
               {{ reviewingCaption }}
             </p>
-          </div>
+          </section>
 
           <!-- Waiting on the author: posted, and the pull request not seen merged or closed. -->
-          <div
+          <section
             v-show="view === 'author'"
             id="panel-author"
             role="tabpanel"
@@ -1997,10 +2020,10 @@ const reviewingCaption = computed(() => {
             >
               {{ postedNote }}.
             </p>
-          </div>
+          </section>
 
           <!-- Your own: the developer's pull requests. GitHub's state, which Review Desk only reads. -->
-          <div
+          <section
             v-show="view === 'own'"
             id="panel-own"
             role="tabpanel"
@@ -2035,10 +2058,10 @@ const reviewingCaption = computed(() => {
                 <span class="rd-meta">· {{ descriptionLintLabel(item.description_lint) }}</span>
               </span>
             </QueueRow>
-          </div>
+          </section>
 
           <!-- Done: the sidebar's Done this week, one row per pull request. -->
-          <div
+          <section
             v-show="view === 'done'"
             id="panel-done"
             role="tabpanel"
@@ -2081,10 +2104,10 @@ const reviewingCaption = computed(() => {
             >
               Finished in the last seven days. Every finished review is under Every review.
             </p>
-          </div>
+          </section>
 
           <!-- Every review: the Reviews list, whole. -->
-          <div
+          <section
             v-show="view === 'every'"
             id="panel-every"
             role="tabpanel"
@@ -2096,7 +2119,7 @@ const reviewingCaption = computed(() => {
               :selected="selected"
               @rows="everyRows = $event"
             />
-          </div>
+          </section>
 
           <p
             v-if="view === 'waiting' && shown.needsYou.length"
