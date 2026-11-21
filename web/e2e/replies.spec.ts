@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { cli, fresh, scratch, seedRoundTwoDraft, serve, stop, type Serving } from './harness'
+import { cli, fresh, scratch, seedRoundTwoDraft, serve, signedIn, stop, type Serving } from './harness'
 
 /*
  * **DEV-1330: the header's *Answer F9* lands on that reply, and the three answers work.**
@@ -24,11 +24,18 @@ const REPLY = 'Fixed in 3c1e2a9: the policy now runs when no columns are set, wi
 let serving: Serving
 let round2: number
 
-/** A developer's write, through the binary's own API, as the dashboard sends it. */
+/**
+ * A developer's write, through the binary's own API, as the dashboard sends it — **signed in**,
+ * with this server's developer cookie (DEV-1346: only the developer writes, from the dashboard).
+ */
 async function post(path: string, body: unknown) {
   const answer = await fetch(`${serving.url}api/v1${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'accept': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'accept': 'application/json',
+      'cookie': `rd_developer=${serving.cookie}`,
+    },
     body: JSON.stringify(body),
   })
   expect(answer.status, `POST ${path}: ${await answer.clone().text()}`).toBeLessThan(300)
@@ -43,7 +50,15 @@ test.beforeAll(async () => {
     'outcome', 'add', '--review', String(round2), '--finding', '9', '--kind', 'replied',
     '--by', 'author', '--detail', REPLY,
   ])
-  await post(`/reviews/${round2}/draft/send-back`, { note: 'Hold it while I answer the reply on F9.' })
+  /*
+   * **Sent back over the draft as served**: every sign-off and send-back carries `shown`, the
+   * hashes of the document the developer saw (DEV-1347), which is what the Draft page sends.
+   */
+  const draft = await fetch(`${serving.url}api/v1/reviews/${round2}/draft`, {
+    headers: { accept: 'application/json', cookie: `rd_developer=${serving.cookie}` },
+  })
+  const { shown } = await draft.json() as { shown: unknown }
+  await post(`/reviews/${round2}/draft/send-back`, { note: 'Hold it while I answer the reply on F9.', shown })
 })
 
 test.afterAll(async () => {
@@ -51,6 +66,8 @@ test.afterAll(async () => {
 })
 
 test('Answer F9 selects the reply on Replies, and W withdraws it in the record', async ({ page }) => {
+  /* This server's developer, not the shared seed's: cookies ignore the port. */
+  await signedIn(page.context(), serving)
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.goto(`${serving.url}reviews/${round2}`)
 
