@@ -131,7 +131,7 @@ const COLUMNS = ['Criterion', 'Observed', 'Where']
 
 .criteria :deep(.td) {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .td--strong {

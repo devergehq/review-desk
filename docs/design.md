@@ -365,7 +365,7 @@ old Alternatives and Solution addresses land, and Overview links to `what-was-ch
 `not-verified`. S3's *Taken as true*, and the *Claimed* and *How* columns of its criteria
 table, are not drawn: the record holds no assumptions and a criterion carries only what was
 observed. *What was built* is not on S3 and stays, because nothing is removed. The rail is
-drawn when the case's own container is 900px wide or more, not by the window.
+drawn when the case's own container is 820px wide or more, not by the window.
 
 ## If you are a session writing the content
 

@@ -313,11 +313,12 @@ function headline(brief: Brief): string {
           in a narrow main column this is the one column of bands it always was.
         -->
         <div class="case">
-          <CaseRail
-            class="case-rail"
-            :bands="CASE_BANDS"
-          />
-          <div class="bands">
+          <div class="case-grid">
+            <CaseRail
+              class="case-rail"
+              :bands="CASE_BANDS"
+            />
+            <div class="bands">
             <CaseWrong
               :detail="data"
               :brief="data.brief"
@@ -338,6 +339,7 @@ function headline(brief: Brief): string {
               :not-checked="data.not_checked"
               :layers="data.layers"
             />
+            </div>
           </div>
         </div>
 
@@ -354,13 +356,19 @@ function headline(brief: Brief): string {
 <style scoped>
 /*
  * **The case is its own container**, so the rail is decided by the room the bands have,
- * not by the window. 52px between bands, as `ReviewStepPage` sets between its sections.
+ * not by the window — and the grid is one element in, because a container query styles a
+ * container's descendants and never the container itself. 52px between bands, as
+ * `ReviewStepPage` sets between its sections.
  */
 .case {
   container-type: inline-size;
+  min-width: 0;
+}
+
+.case-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 32px;
+  gap: 28px;
   min-width: 0;
 }
 
@@ -376,10 +384,15 @@ function headline(brief: Brief): string {
 }
 
 /*
- * S3's rail is 200px beside about 1,000 of bands. Under 900px of container the bands would
- * be squeezed to keep it, so it goes and the bands take the column.
+ * S3 sets the rail at about 160px beside about 760 of bands. Under 820px of container that
+ * would squeeze the bands' tables, so the rail goes and the bands take the column.
  */
-@container (min-width: 900px) {
+@container (min-width: 820px) {
+  .case-grid {
+    grid-template-columns: 168px minmax(0, 1fr);
+    align-items: start;
+  }
+
   .case-rail {
     display: flex;
   }
