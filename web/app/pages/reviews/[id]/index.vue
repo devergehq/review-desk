@@ -10,10 +10,10 @@ import type { ReviewDetail } from '~/types/desk'
  *  │ the brief's headline                                                         │
  *  │ 3 problems   Option C built   All 3 problems it fixes   12 findings          │
  *  └──────────────────────────────────────────────────────────────────────────────┘
+ *  ▸ The seven steps, what each came to and how long it took
  *  WHERE IT STANDS                                      NEEDS YOUR EYE
  *  ✓ Brief ready ── ✓ Code review ── ● Draft ready ─…   [BLOCKER] F9 · …
- *  ▸ The seven steps                                    [SHOULD]  F6 · …
- *  WHAT YOU'D BE ASKED                    3 of 5 written
+ *  WHAT YOU'D BE ASKED                    3 of 5 written    [SHOULD]  F6 · …
  *  ✓ What does it do?   the after-flow caption    Understanding →
  *  …
  * ```
@@ -25,7 +25,7 @@ import type { ReviewDetail } from '~/types/desk'
  *
  * **What this page drew before moved rather than vanished.** It drew the case and the step
  * trail. The case is the Understanding tab, which every question here links to. The trail
- * is folded under *Where it stands*: the five stages say where the review is, and the trail
+ * is folded under the bottom line: the five stages say where the review is, and the trail
  * still says what each of the seven steps came to and how long it took, which nothing else
  * draws.
  */
@@ -124,6 +124,29 @@ const BASIS = BASIS_WORDS
             </dl>
           </section>
 
+          <!--
+            **The seven steps, folded, at the full width of the column.** *Where it stands*
+            answers where the review is; the trail still answers what each step came to, its
+            facts and how long it took, and nothing else draws those — so it is folded here
+            rather than dropped. Full width, not in the column beside *Needs your eye*: seven
+            steps in two thirds of the column leave each one 59px at 1,440, and a step's own
+            words are cut off before they say anything. **And not last on the page**: a step's
+            card opens below it, out of flow, and under the last thing on the page it would
+            hang past the end and grow the page it is meant to sit over.
+          -->
+          <details
+            class="rd-fold steps-fold"
+            data-testid="seven-steps"
+          >
+            <summary>The seven steps, what each came to and how long it took</summary>
+            <StepTrail
+              :layers="data.layers"
+              :review-id="data.review.id"
+              :round="data.review.round"
+              :off-the-desk="data.not_for_signing != null"
+            />
+          </details>
+
           <div class="columns">
             <div class="main">
               <section
@@ -155,23 +178,6 @@ const BASIS = BASIS_WORDS
                   </li>
                 </ol>
 
-                <!--
-                  **The seven steps, folded.** The stages above answer *where is it*; the trail
-                  still answers what each step came to, its facts and how long it took, and
-                  nothing else draws those — so it is folded here rather than dropped.
-                -->
-                <details
-                  class="rd-fold steps-fold"
-                  data-testid="seven-steps"
-                >
-                  <summary>The seven steps, what each came to and how long it took</summary>
-                  <StepTrail
-                    :layers="data.layers"
-                    :review-id="data.review.id"
-                    :round="data.review.round"
-                    :off-the-desk="data.not_for_signing != null"
-                  />
-                </details>
               </section>
 
               <section
@@ -413,7 +419,7 @@ const BASIS = BASIS_WORDS
 }
 
 .steps-fold {
-  margin-top: 8px;
+  margin-top: 12px;
   font-size: var(--rd-type-ui);
 }
 

@@ -358,12 +358,12 @@ test.describe('the whole path, on a seeded database', () => {
     expect(before.brief.confirmed_by).toBeNull()
 
     /*
-     * **On Understand, which is where confirming lives since DEV-878.** It was on
+     * **On Understanding, which is where confirming lives since DEV-878.** It was on
      * `/reviews/{id}`, and retiring that page without moving this would have left the
      * dashboard unable to confirm a brief at all — one of only two acts in the whole
-     * system that record the developer's sign-off.
+     * system that record the developer's sign-off. Overview (DEV-1326) links here.
      */
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understanding`)
     await expect(page.getByText('Confirm the problem before anything is posted')).toBeVisible()
     await expect(
       page.getByText('A webhook delivery that fails once is never tried again'),
@@ -389,8 +389,9 @@ test.describe('the whole path, on a seeded database', () => {
      * **And the trail moved with it.** DEV-862 shipped this screen reading
      * "2 Understand · waiting on you" under a brief that had just been confirmed, and
      * recorded it as a known risk. This is the assertion that says it no longer does —
-     * from the screen, which is where the fault was visible.
+     * from the screen, which is where the fault was visible. The trail is on Overview.
      */
+    await page.goto(`${seeded}reviews/${reviewId}`)
     const layers = await trail(page)
     expect(layers[1]).toContain('Understand')
     expect(layers[1]).toContain('confirmed by the developer')
@@ -722,7 +723,7 @@ test.describe('the whole path, on a seeded database', () => {
       page.locator('#panel-waiting .queue-line').filter({ hasText: '#418' }),
     ).toHaveCount(0)
 
-    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+    await page.goto(`${seeded}reviews/${waivedReviewId}/understanding`)
     await expect(page.getByText('Confirmation not required.')).toBeVisible()
     /*
      * `.first()`, because the reason is legitimately in two places on this screen: the
@@ -752,6 +753,8 @@ test.describe('the whole path, on a seeded database', () => {
     ).toBeVisible()
 
     /* Layer 2 is finished with on write, and the trail carries why. */
+    /* The trail is folded on Overview since DEV-1326. */
+    await page.goto(`${seeded}reviews/${waivedReviewId}`)
     const layers = await trail(page)
     expect(layers[1]).toContain('confirmation not required')
     expect(layers[1]).toContain('200-line threshold')
@@ -780,7 +783,7 @@ test.describe('the whole path, on a seeded database', () => {
      * diagram would be, nothing of mermaid's is outside the component, and the graphic is
      * still absent two navigations later.
      */
-    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+    await page.goto(`${seeded}reviews/${waivedReviewId}/understanding`)
 
     const figure = page.locator('figure')
     await expect(figure.locator('pre')).toContainText(
@@ -817,7 +820,7 @@ test.describe('the whole path, on a seeded database', () => {
      * only thing in this repository that can say it was drawn — jsdom has no `getBBox`, so
      * the component tests cannot.
      */
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understanding`)
     const drawing = page.locator('figure svg')
     await expect(drawing).toBeVisible()
     await expect(drawing).toContainText('Deliver')
@@ -887,7 +890,7 @@ test.describe('the whole path, on a seeded database', () => {
  */
 test.describe('the case for one review, in three bands', () => {
   test('all three bands on one page, and the trail says so', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${structuredReviewId}`)
+    await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
 
     /* ---- the opening: the headline, the derived line, the verdict ---- */
 
@@ -989,6 +992,8 @@ test.describe('the case for one review, in three bands', () => {
      * **The trail's step 3 lands on this page at its band**, which is what the fragment is
      * for: three steps, one page, three places.
      */
+    /* The trail is on Overview, folded, since DEV-1326; the case is on Understanding. */
+    await page.locator('.tabs').getByRole('link', { name: 'Overview' }).click()
     await (await openSteps(page)).getByRole('link', { name: /3 Alternatives/ }).click()
     await expect(page).toHaveURL(
       `${seeded}reviews/${structuredReviewId}/understanding#what-was-chosen`,
@@ -1244,7 +1249,7 @@ test.describe('the case for one review, in three bands', () => {
     /** The step's line and the page's headline, as the browser lays them out. */
       const measure = async () => {
         await page.goto(`${seeded}reviews/${structuredReviewId}`)
-        await expect(page.locator('h2.headline')).toBeVisible()
+        await openSteps(page)
         await page.waitForLoadState('networkidle')
         const step = page.locator('.steps li').nth(1)
         await expect(step).toContainText('2 Understand')
@@ -1261,7 +1266,7 @@ test.describe('the case for one review, in three bands', () => {
               textOverflow: style.textOverflow,
             }
           }),
-          headline: await page.locator('h2.headline').evaluate(
+          headline: await page.getByTestId('bottom-line').evaluate(
             element => Math.round(element.getBoundingClientRect().top + window.scrollY),
           ),
         }
@@ -1317,12 +1322,12 @@ test.describe('the case for one review, in three bands', () => {
    */
   test('opening a step’s card moves nothing else', async ({ page }) => {
     await page.goto(`${seeded}reviews/${structuredReviewId}`)
-    await expect(page.locator('h2.headline')).toBeVisible()
+    await openSteps(page)
     await page.waitForLoadState('networkidle')
 
     /* Every element with a box on this page, by where it is. */
     const positions = () => page.evaluate(() =>
-      [...document.querySelectorAll('h1, h2, .steps li, section, .totals, .pair, .key')]
+      [...document.querySelector('#main')!.querySelectorAll('h1, h2, .steps li, section, .totals, .pair, .key')]
         .map((element) => {
           const box = element.getBoundingClientRect()
           return `${element.tagName}.${element.className}@${Math.round(box.top + window.scrollY)}x${Math.round(box.left)}`
@@ -1364,7 +1369,7 @@ test.describe('the case for one review, in three bands', () => {
    */
   test('a step’s card opens and closes by keyboard, and returns the focus', async ({ page }) => {
     await page.goto(`${seeded}reviews/${structuredReviewId}`)
-    await expect(page.locator('h2.headline')).toBeVisible()
+    await openSteps(page)
 
     const control = page.locator('.steps li').nth(1).locator('.outcome')
     await control.focus()
@@ -1402,9 +1407,14 @@ test.describe('the case for one review, in three bands', () => {
      * whose target turns out to be a link is the failure this is avoiding, so the test
      * fails on it instead of opening a tab.
      */
-    const at = await page.locator('[data-testid="review-header"]').boundingBox()
-    expect(at, 'the line naming the review is drawn').not.toBeNull()
-    const beside = { x: 4, y: at!.y + at!.height / 2 }
+    /*
+     * **Beside the trail, on the bottom line's heading just above it** (DEV-1326): Overview
+     * folds the trail under the bottom line, so the header may be scrolled away while the
+     * card is open, and a point off-screen is no point at all.
+     */
+    const at = await page.locator('#bottom-line-heading').boundingBox()
+    expect(at, 'the heading over the trail is drawn').not.toBeNull()
+    const beside = { x: at!.x + 4, y: at!.y + at!.height / 2 }
 
     const pressed = await page.evaluate(({ x, y }) => {
       const found = document.elementFromPoint(x, y)
@@ -1428,7 +1438,7 @@ test.describe('the case for one review, in three bands', () => {
    */
   test('a step with nothing behind it draws no control', async ({ page }) => {
     await page.goto(`${seeded}reviews/${structuredReviewId}`)
-    await expect(page.locator('h2.headline')).toBeVisible()
+    await openSteps(page)
 
     for (const index of [3, 6]) {
       const step = page.locator('.steps li').nth(index)
@@ -1492,7 +1502,7 @@ test.describe('the case for one review, in three bands', () => {
 
       /* Every element with a box on this page, by where it is. */
       const positions = () => page.evaluate(() =>
-        [...document.querySelectorAll('h1, h2, .steps li, section, .totals, .pair, .key')]
+        [...document.querySelector('#main')!.querySelectorAll('h1, h2, .steps li, section, .totals, .pair, .key')]
           .map((element) => {
             const box = element.getBoundingClientRect()
             return `${element.tagName}.${element.className}@${Math.round(box.top + window.scrollY)}x${Math.round(box.left)}`
@@ -1507,7 +1517,7 @@ test.describe('the case for one review, in three bands', () => {
         /* What the trail looks like for a review no harvest has read. */
         setStepSeven('pending', 'posted, waiting for the harvest', ['--clear-facts'])
         await page.goto(understand)
-        await expect(page.locator('h2.headline')).toBeVisible()
+        await openSteps(page)
         await page.waitForLoadState('networkidle')
         const step = page.locator('.steps li').nth(6)
         await expect(step).toContainText('7 What happened')
@@ -1528,7 +1538,7 @@ test.describe('the case for one review, in three bands', () => {
           'Code changed since=3 findings',
         ])
         await page.reload()
-        await expect(page.locator('h2.headline')).toBeVisible()
+        await openSteps(page)
         await page.waitForLoadState('networkidle')
         /*
            **The line is the store's four words and nothing else, and it fits.** That is
@@ -1583,7 +1593,7 @@ test.describe('the case for one review, in three bands', () => {
         */
         setStepSeven('running', 'nothing back yet', ['--clear-facts'])
         await page.reload()
-        await expect(page.locator('h2.headline')).toBeVisible()
+        await openSteps(page)
         await page.waitForLoadState('networkidle')
         await expect(step.locator('.outcome')).toHaveText(/^nothing back yet/)
         /* Under a pointer as well as a click: the card is drawn on `opens`, and so is
@@ -1810,7 +1820,7 @@ test.describe('the case for one review, in three bands', () => {
       const prose = await page.locator('.fields .rd-recorded').first()
         .evaluate(el => el.clientWidth)
 
-      await page.goto(`${seeded}reviews/${structuredReviewId}`)
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
       await expect(page.locator('h2.headline')).toBeVisible()
       const shell = await page.locator('#main').evaluate(el => el.clientWidth)
 
@@ -2032,7 +2042,7 @@ test.describe('the case for one review, in three bands', () => {
    * that it still shows: never a blank page and never an error.
    */
   test('a brief written before the structured one still shows', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understanding`)
 
     await expect(page.getByText('Written before the structured brief.')).toBeVisible()
     /* The seed's own wording, written by `brief put` before any of this ran. */
@@ -2196,7 +2206,7 @@ test.describe('the case for one review, in three bands', () => {
      */
     for (const width of [1600, 390]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
-      await page.goto(`${seeded}reviews/${structuredReviewId}`)
+      await page.goto(`${seeded}reviews/${structuredReviewId}/understanding`)
       await expect(page.locator('h2.headline')).toBeVisible()
       await page.waitForLoadState('networkidle')
 
@@ -2957,7 +2967,7 @@ test.describe('a drawing opens larger', () => {
    */
   test('the diagram on the Understand page opens larger too', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understanding`)
     await expect(page.locator('h2.headline')).toBeVisible()
     await page.waitForLoadState('networkidle')
 
@@ -3003,7 +3013,7 @@ test.describe('a drawing opens larger', () => {
    * promising a larger view of it would be a lie the page tells.
    */
   test('a sketch offers nothing to enlarge', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${waivedReviewId}`)
+    await page.goto(`${seeded}reviews/${waivedReviewId}/understanding`)
     await expect(page.locator('h2.headline')).toBeVisible()
     await page.waitForLoadState('networkidle')
 
@@ -3424,7 +3434,7 @@ test.describe('a database with nothing in it', () => {
 
 test.describe('the server stops while a page is open', () => {
   test('a message, the command that fixes it, and a retry that works', async ({ page }) => {
-    await page.goto(`${seeded}reviews/${reviewId}`)
+    await page.goto(`${seeded}reviews/${reviewId}/understanding`)
     await expect(page.getByText('A webhook delivery that fails once')).toBeVisible()
 
     /*
@@ -3787,7 +3797,7 @@ test.describe('taking a review off the desk', () => {
    */
   test('a review is dismissed with a reason, says so, and is brought back', async ({ page }) => {
     try {
-      await page.goto(`${seeded}reviews/${reviewId}`)
+      await page.goto(`${seeded}reviews/${reviewId}/understanding`)
 
       const card = page.locator('#remove-review')
       await expect(card).toContainText('Take this review off the desk')
@@ -3843,7 +3853,7 @@ test.describe('taking a review off the desk', () => {
        * dismiss button. Waiting for the card's own heading settles the read, and only then
        * is the undo's absence an answer about the review rather than about the timing.
        */
-      await page.goto(`${seeded}reviews/${reviewId}`)
+      await page.goto(`${seeded}reviews/${reviewId}/understanding`)
       const card = page.locator('#remove-review')
       await expect(card).toContainText('Take this review off the desk')
       const undo = card.getByRole('button', { name: 'Bring it back' })
@@ -3872,7 +3882,7 @@ test.describe('taking a review off the desk', () => {
        * and two buttons and the delete's question with its two answers are both reachable
        * without this test depending on what another one left behind.
        */
-      await page.goto(`${seeded}reviews/${requestedReviewId}`)
+      await page.goto(`${seeded}reviews/${requestedReviewId}/understanding`)
       const card = page.locator('#remove-review')
       await expect(card).toContainText('Take this review off the desk')
 

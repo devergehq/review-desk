@@ -149,7 +149,7 @@ first column. Six rules it keeps, each in the file that holds it:
   `lines_changed: true` on a `code_changed_after`. A file that changed around an unmoved line
   has no row.
 - **Where it stands replaces the trail as the answer to *where is it***: Brief ready → Code
-  review → Draft ready → Posted → Replies in. The seven-step trail is folded under it, because
+  review → Draft ready → Posted → Replies in. The seven-step trail is folded under the bottom line, because
   it still says what each step came to and how long it took, and nothing else does.
 
 **The header's rules**, from the 15 November rules for every screen:
