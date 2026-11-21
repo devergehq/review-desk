@@ -503,10 +503,10 @@ impl Records {
         self.with(|store| store.approve_draft(review_id, event, SIGN_OFF_ACTOR, shown))
     }
 
-    /// What a developer reading this draft now is shown: its hashes and its revision.
-    pub fn draft_shown(&self, review_id: i64) -> Result<DraftShown, ApiError> {
-        self.with(|store| store.draft_shown(review_id))
-    }
+    // **No `draft_shown` here, on purpose.** A page's `shown` is hashed from the draft and
+    // threads it serves — `review_desk_store::shown_of` in `Api::draft_detail` — and a method
+    // that read it again would be the way back to the bug DEV-1346's self-review found: body
+    // A served beside B's `shown`. Removed so that reintroducing it is a decision, not a call.
 
     /// Send the draft back to the session with a note, and keep the note in the review's
     /// conversation.

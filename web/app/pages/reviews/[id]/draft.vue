@@ -102,10 +102,35 @@ const ticketingRest = ref(false)
  * meantime, the new text and its `shown` replace the old, and a sign-off then binds to the
  * new text. That is correct, and the developer has to know it happened: so the `shown` the
  * page last drew is kept, and a new one arriving *outside this page's own writes* puts up the
- * same sentence a refused sign-off does. This page's writes are the ones with `working` set;
- * their re-read is the developer's own doing and says what it did in its own notice.
+ * same sentence a refused sign-off does — except after this page's own writes that move the
+ * draft, whose re-read is the developer's doing and says what it did in its own notice.
  */
 const lastShown = ref<string | null>(null)
+const CHANGED_UNDERNEATH = 'The draft changed while you were reading it · review the change.'
+/*
+ * Whether the re-read inside the write now finishing brought a rewritten draft. A write's own
+ * notice is put up after its re-read, so without this the change would be announced and at
+ * once replaced by "Queued as one ticket" — `said` keeps it, ahead of what the write did.
+ */
+let changedUnderneath = false
+/*
+ * **Set by the writes that move the draft themselves**, and by nothing else: saving, and the
+ * three sign-offs, each of which says what it did in its own notice. Not `working`, which
+ * asking for the nit ticket sets too — its re-read would otherwise carry a session's
+ * rewrite in with the notice muted. Found by the second round of DEV-1346's self-review.
+ */
+const movingTheDraft = ref(false)
+
+/** Run one of this page's own writes that moves the draft. */
+async function moving<T>(write: () => Promise<T>): Promise<T> {
+  movingTheDraft.value = true
+  try {
+    return await write()
+  }
+  finally {
+    movingTheDraft.value = false
+  }
+}
 watch(
   () => detail.data.value,
   (data) => {
@@ -118,13 +143,11 @@ watch(
     ].join(':')
     const before = lastShown.value
     lastShown.value = drawn
-    if (before === null || before === drawn || working.value) return
+    if (before === null || before === drawn || movingTheDraft.value) return
     /* Another review in the same page instance is a navigation, not a change under anyone. */
     if (before.split(':')[0] !== String(data.draft.review_id)) return
-    notice.value = {
-      tone: 'problem',
-      text: 'The draft changed while you were reading it · review the change.',
-    }
+    changedUnderneath = true
+    notice.value = { tone: 'problem', text: CHANGED_UNDERNEATH }
   },
 )
 const ticketNote = ref('')
@@ -521,7 +544,11 @@ function canSendBack(data: DraftDetail): boolean {
 }
 
 function said(result: WriteResult): boolean {
-  notice.value = noticeFor(result)
+  const done = noticeFor(result)
+  notice.value = changedUnderneath
+    ? { tone: 'problem', text: `${CHANGED_UNDERNEATH} ${done?.text ?? ''}`.trim() }
+    : done
+  changedUnderneath = false
   return result.ok
 }
 
@@ -565,7 +592,8 @@ async function save() {
   if (!data) return
   if (!ofThisReview(data)) return stillReading()
   working.value = true
-  const result = await desk.saveDraft(data.draft.review_id, loadedBody.value, editing.value)
+  const result = await moving(() =>
+    desk.saveDraft(data.draft.review_id, loadedBody.value, editing.value))
   working.value = false
   if (said(result)) view.value = 'rendered'
 }
@@ -582,7 +610,7 @@ async function approve() {
   if (!data) return
   if (!ofThisReview(data)) return stillReading()
   working.value = true
-  said(await desk.approveDraft(data.draft.review_id, event.value, data.shown))
+  said(await moving(() => desk.approveDraft(data.draft.review_id, event.value, data.shown)))
   working.value = false
 }
 
@@ -591,7 +619,8 @@ async function sendBack() {
   if (!data) return
   if (!ofThisReview(data)) return stillReading()
   working.value = true
-  const result = await desk.sendBackDraft(data.draft.review_id, note.value, data.shown)
+  const result = await moving(() =>
+    desk.sendBackDraft(data.draft.review_id, note.value, data.shown))
   working.value = false
   if (said(result)) {
     sendingBack.value = false
@@ -695,7 +724,8 @@ async function ticketRest() {
   if (!data) return
   if (!ofThisReview(data)) return stillReading()
   working.value = true
-  const result = await desk.ticketRestAndApprove(data.draft.review_id, ticketNote.value, data.shown)
+  const result = await moving(() =>
+    desk.ticketRestAndApprove(data.draft.review_id, ticketNote.value, data.shown))
   working.value = false
   if (said(result)) {
     ticketingRest.value = false

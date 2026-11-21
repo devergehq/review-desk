@@ -27,6 +27,8 @@ let reviewId: number
 let anotherId: number
 /* A third, for a draft re-drawn by a re-read the developer did not ask for. */
 let redrawnId: number
+/* A fourth, with a nit held back, for the write that does not move the draft. */
+let ticketedId: number
 
 function putDraft(text: string, review: number = reviewId) {
   const path = join(directory, `shown-body-${review}-${Date.now()}.json`)
@@ -54,6 +56,18 @@ test.beforeAll(async () => {
   putDraft('A draft for the browser that has no cookie.', anotherId)
   redrawnId = openReview('736', 'c9d0e12')
   putDraft('The draft as it was when the page opened.', redrawnId)
+  ticketedId = openReview('737', 'd0e1f23')
+  const nit = join(directory, 'shown-nit.json')
+  writeFileSync(nit, JSON.stringify({
+    lens: 'conventions',
+    severity: 'nit',
+    claim: 'Name the constant after what it holds',
+    file: 'app/Exports/ScheduledExport.php',
+    line: 12,
+    disposition: 'held_back',
+  }))
+  cli(database, ['finding', 'add', '--review', String(ticketedId), '--file', nit])
+  putDraft('The draft before the nit ticket was asked for.', ticketedId)
   serving = await serve(database)
 })
 
@@ -113,6 +127,24 @@ test('a draft rewritten and then re-read says so before anything is signed off',
   await page.getByRole('button', { name: 'Ask', exact: true }).click()
 
   await expect(page.getByText('Rewritten behind the page.')).toBeVisible()
+  await expect(
+    page.getByText('The draft changed while you were reading it · review the change.'),
+  ).toBeVisible()
+})
+
+/*
+ * **Asking for the nit ticket does not move the draft, so its re-read is not the developer's
+ * change.** The second round of DEV-1346's self-review found the notice muted here: the page
+ * muted it for every one of its own writes, and this one writes nothing to the draft.
+ */
+test('a rewrite that arrives with the nit ticket\'s re-read says so too', async ({ page }) => {
+  await page.goto(`${serving.url}reviews/${ticketedId}/draft`)
+  await expect(page.getByText('The draft before the nit ticket was asked for.')).toBeVisible()
+
+  putDraft('Rewritten before the nit ticket was asked for.', ticketedId)
+  await page.getByRole('button', { name: 'File as one ticket for an agent' }).click()
+
+  await expect(page.getByText('Rewritten before the nit ticket was asked for.')).toBeVisible()
   await expect(
     page.getByText('The draft changed while you were reading it · review the change.'),
   ).toBeVisible()
