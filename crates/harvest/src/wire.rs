@@ -187,6 +187,18 @@ pub fn blob(json: &str) -> Result<BlobAt> {
     })
 }
 
+/// The id of the review a `POST pulls/<n>/reviews` created — DEV-1347.
+///
+/// A number on GitHub's side and a string in the record, which is how `github_review_id`
+/// has always been held.
+pub fn created_review_id(json: &str) -> Result<String> {
+    #[derive(Deserialize)]
+    struct Created {
+        id: u64,
+    }
+    Ok(read::<Created>(json, "created review")?.id.to_string())
+}
+
 /// Seconds since the epoch from an ISO 8601 instant like `2026-09-30T10:54:42Z`.
 ///
 /// GitHub emits UTC to the second and nothing else, so this reads that and declines

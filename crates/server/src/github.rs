@@ -3,8 +3,9 @@
 //! One operation reads GitHub: `POST /reviews`, and only to resolve what the caller did
 //! not supply — the head commit, the title and the changed-line count, which arrive in one
 //! response. The read goes through `crates/harvest`'s `GitHub` trait, which is four
-//! read-only methods and has no write in it — so "Review Desk never posts to GitHub" is a
-//! property of the type the server depends on, not a promise in a comment.
+//! read-only methods and has no write in it — so "this server never posts to GitHub" is a
+//! property of the type the server depends on, not a promise in a comment. (The one GitHub
+//! write, `review-desk post`, is a command, and does not go through the server.)
 //!
 //! The reader is injected rather than constructed here, which is what lets the tests run
 //! with no network: `harvest::recorded::Recorded` replays responses captured off a real

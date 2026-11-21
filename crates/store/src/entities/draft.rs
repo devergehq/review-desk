@@ -456,8 +456,8 @@ impl Store {
     /// Record that the review session has posted the approved draft, as this GitHub
     /// review.
     ///
-    /// **Refused unless the draft is approved.** This is the only transition that
-    /// involves GitHub, and the session makes it: Review Desk never posts. The draft's
+    /// **Refused unless the draft is approved.** Called by `draft posted`, after a session
+    /// posted with raw `gh`, and by [`Store::finish_post`] after `review-desk post`. The draft's
     /// `posted_at` and the review's `github_review_id` are one fact, so they are
     /// written in one transaction — a posted draft nobody can find the review for would
     /// be worse than either write failing.
@@ -474,6 +474,17 @@ impl Store {
         }
 
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        self.record_posted(review_id, github_review_id)?;
+        tx.commit()?;
+        self.get_draft(review_id)
+    }
+
+    /// The writes behind [`Store::post_draft`], inside a transaction the caller holds.
+    ///
+    /// Shared with `review-desk post` (DEV-1347), which marks its tag row posted in the
+    /// same transaction as the draft, so that the two cannot disagree about whether the
+    /// review went up.
+    pub(crate) fn record_posted(&self, review_id: i64, github_review_id: &str) -> Result<()> {
         let draft = self.get_draft(review_id)?;
         let review = self.get_review(review_id)?;
 
@@ -531,9 +542,7 @@ impl Store {
             )?;
         }
 
-        self.mark_review_active(review_id)?;
-        tx.commit()?;
-        self.get_draft(review_id)
+        self.mark_review_active(review_id)
     }
 }
 

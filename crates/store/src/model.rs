@@ -3096,3 +3096,101 @@ pub struct FreshSessionRequest {
     /// Why not, in the dispatcher's words.
     pub declined_reason: Option<String>,
 }
+
+string_enum! {
+    /// Whose word a post through Review Desk rests on — DEV-1347.
+    ///
+    /// **It always falls toward the weaker label.** `typed` is only ever written when Allele
+    /// itself confirms that the developer typed the go-ahead into that session; anything
+    /// short of that — no Allele, an Allele without the check, a check that did not answer,
+    /// an answer that was not an unqualified yes — is `desk`.
+    PostBasis as "basis" {
+        /// Allele saw the developer type the go-ahead in the session that posted.
+        Typed => "typed",
+        /// Posted through Review Desk after the dashboard sign-off; nobody checked who said
+        /// go ahead.
+        Desk => "desk",
+    }
+}
+
+string_enum! {
+    /// Where one attempt to post a review through Review Desk got to.
+    PostedTagStatus as "posted_tag_status" {
+        /// Recorded and not yet answered by GitHub — or answered in a way that cannot say
+        /// whether the review went up. A second post is refused while one exists.
+        Pending => "pending",
+        /// GitHub accepted it, and `github_review_id` is the review it became.
+        Posted => "posted",
+        /// GitHub refused, or could not be reached. Nothing went up, and it may be retried.
+        Failed => "failed",
+    }
+}
+
+/// One attempt to post a review through Review Desk, and the tag it carried — DEV-1347.
+///
+/// **The salt is not here.** It never leaves the `posted_tags` table: a reader that has it
+/// can recompute every HMAC in the tag, so nothing that prints a record carries it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PostedTag {
+    pub id: i64,
+    pub review_id: i64,
+    pub github_review_id: Option<String>,
+    pub status: PostedTagStatus,
+    /// The approval statement, `review-desk/approval@1`, as the JCS bytes the HMAC was
+    /// taken over.
+    pub statement: String,
+    pub statement_hmac: String,
+    pub line_hmac: Option<String>,
+    /// The go-ahead line, as the developer typed it. Kept here and never posted.
+    pub go_ahead_line: Option<String>,
+    pub go_ahead_at: Option<Timestamp>,
+    pub session_id: String,
+    pub basis: PostBasis,
+    pub install_id: String,
+    pub created_at: Timestamp,
+    pub posted_at: Option<Timestamp>,
+    pub failure: Option<String>,
+}
+
+/// What a review on GitHub says about how it was posted, read against this Mac's record.
+///
+/// The four rows DEV-1347 names, plus the one it implies: a tag this build will not read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "reading", rename_all = "snake_case")]
+pub enum TagReading {
+    /// A tag whose statement this record holds, keyed with the salt it holds.
+    Held { basis: PostBasis, review_id: i64 },
+    /// A well-formed tag whose statement this Mac's record does not hold.
+    NotHeld,
+    /// No tag at all.
+    NoTag,
+    /// Something that claims to be a tag and is not one this grammar accepts.
+    Rejected { reason: String },
+}
+
+impl TagReading {
+    /// The sentence the developer reads under a posted review.
+    pub fn sentence(&self) -> &'static str {
+        match self {
+            TagReading::Held {
+                basis: PostBasis::Typed,
+                ..
+            } => {
+                "Posted through Review Desk after you said go ahead in the session (Allele saw \
+                 it typed)"
+            }
+            TagReading::Held {
+                basis: PostBasis::Desk,
+                ..
+            } => "Posted through Review Desk; nobody checked who said go ahead",
+            TagReading::NotHeld => {
+                "Says it went through Review Desk, but this Mac has no record of it"
+            }
+            TagReading::NoTag => "Posted without going through Review Desk",
+            TagReading::Rejected { .. } => {
+                "Carries a tag Review Desk did not write, so it says nothing about how it was \
+                 posted"
+            }
+        }
+    }
+}

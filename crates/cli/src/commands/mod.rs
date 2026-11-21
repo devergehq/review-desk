@@ -12,6 +12,7 @@ mod harvest;
 mod layer;
 mod message;
 mod outcome;
+mod post;
 mod provenance;
 mod review;
 mod round;
@@ -93,6 +94,8 @@ enum Command {
         #[command(subcommand)]
         command: rules::RulesCommand,
     },
+    /// Post the review the developer approved, through Review Desk, with its hidden tag.
+    Post(post::PostArgs),
     /// Read the outcomes of posted reviews back from GitHub and record them.
     Harvest(harvest::HarvestArgs),
     /// Serve the JSON API and the dashboard on 127.0.0.1.
@@ -122,6 +125,7 @@ pub fn run(cli: &Cli) -> Result<Report> {
         Command::Provenance { command } => provenance::run(command),
         Command::Round { command } => round::run(command),
         Command::Rules { command } => rules::run(command),
+        Command::Post(args) => post::run(args),
         Command::Harvest(args) => harvest::run(args),
         Command::Serve(args) => serve::run(args, cli.json),
         Command::Message { command } => message::run(command),

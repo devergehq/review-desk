@@ -136,6 +136,27 @@ pub enum StoreError {
         moved: String,
     },
 
+    /// A post of this review is already in flight — DEV-1347.
+    ///
+    /// `review-desk post` records the attempt before it calls GitHub, and a `pending` row is
+    /// the one state that cannot say whether the review went up: the call may have been made
+    /// and its answer lost. Posting again could put the same review up twice under the
+    /// developer's name, so it is refused until the attempt is known to have failed.
+    #[error(
+        "review {review_id} already has a post in flight (attempt {tag_id}, recorded at \
+         {since}), and it may have reached GitHub. Nothing was posted. Look for the review on \
+         the pull request before trying again"
+    )]
+    PostInFlight {
+        review_id: i64,
+        tag_id: i64,
+        since: i64,
+    },
+
+    /// The operating system's randomness could not be read, so no salt could be made.
+    #[error("cannot read randomness from the operating system: {0}")]
+    NoRandomness(#[source] std::io::Error),
+
     #[error("no {entity} with id {id}")]
     NotFound { entity: &'static str, id: String },
 
@@ -208,6 +229,8 @@ impl StoreError {
             StoreError::NotDismissed { .. } => "not_dismissed",
             StoreError::ReviewStarted { .. } => "review_started",
             StoreError::ShownMoved { .. } => "changed_since_shown",
+            StoreError::PostInFlight { .. } => "post_in_flight",
+            StoreError::NoRandomness(_) => "no_randomness",
             StoreError::NotFound { .. } => "not_found",
             StoreError::UnknownParent { .. } => "unknown_parent",
             StoreError::InvalidValue { .. } => "invalid_value",
@@ -236,6 +259,7 @@ impl StoreError {
                 | StoreError::NotDismissed { .. }
                 | StoreError::ReviewStarted { .. }
                 | StoreError::ShownMoved { .. }
+                | StoreError::PostInFlight { .. }
                 | StoreError::NotFound { .. }
                 | StoreError::UnknownParent { .. }
                 | StoreError::InvalidValue { .. }

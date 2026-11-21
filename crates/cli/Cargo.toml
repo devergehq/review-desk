@@ -28,3 +28,8 @@ thiserror.workspace = true
 assert_cmd.workspace = true
 predicates.workspace = true
 tempfile.workspace = true
+# `tests/post.rs` changes an approved draft under the store to prove `post` refuses it. No
+# command changes an approved draft — that is the point — so the test writes the column
+# itself, as `crates/server/tests/staleness.rs` does. Test-only, and already a dependency of
+# the store.
+rusqlite.workspace = true

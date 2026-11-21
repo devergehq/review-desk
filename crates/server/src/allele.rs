@@ -15,9 +15,10 @@
 //! - **Broken is loud and blocks nothing.** A socket that refuses, or accepts and does not
 //!   answer within [`TIMEOUT`], reads as [`SessionStatus::Unreachable`]. The request that
 //!   asked costs at most that long, and nothing else on the page waits on it.
-//! - **One direction.** The request is `sessions_status` and nothing else. The session's
-//!   `reply_to` address is read off the answer and dropped: Review Desk reads from a
-//!   session and never writes into one.
+//! - **One direction.** The requests are `sessions_status` and, for `review-desk post`
+//!   (DEV-1347), `prompts_verify`, and nothing else. The session's `reply_to` address is
+//!   read off the answer and dropped: Review Desk reads from a session and never writes
+//!   into one.
 //!
 //! The wire is Allele's (`src/dispatch/protocol.rs` there): one JSON object per line each
 //! way, over a Unix socket at `~/.allele/control.sock`, mode 0600. Allele keeps those wire
@@ -151,60 +152,92 @@ impl Allele {
     }
 }
 
-#[cfg(unix)]
 fn ask(socket: &Path, session_id: &str) -> Reading {
+    let request = serde_json::json!({ "op": "sessions_status", "session_id": session_id });
+    match exchange(socket, &request) {
+        Ok(line) => answer(&line),
+        Err(detail) => Reading::because(SessionStatus::Unreachable, detail),
+    }
+}
+
+/// Send one request line and read one answer line, or say what went wrong reaching Allele.
+#[cfg(unix)]
+fn exchange(socket: &Path, request: &serde_json::Value) -> Result<String, String> {
     use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixStream;
 
-    let mut stream = match UnixStream::connect(socket) {
-        Ok(stream) => stream,
-        Err(error) => {
-            return Reading::because(
-                SessionStatus::Unreachable,
-                format!("Allele's socket refused the connection: {error}"),
-            )
-        }
-    };
+    let mut stream = UnixStream::connect(socket)
+        .map_err(|error| format!("Allele's socket refused the connection: {error}"))?;
 
     // Both directions, so a socket that accepts and never reads cannot hold a write either.
-    let timed = stream
+    stream
         .set_read_timeout(Some(TIMEOUT))
-        .and_then(|()| stream.set_write_timeout(Some(TIMEOUT)));
-    if let Err(error) = timed {
-        return Reading::because(SessionStatus::Unreachable, error.to_string());
-    }
+        .and_then(|()| stream.set_write_timeout(Some(TIMEOUT)))
+        .map_err(|error| error.to_string())?;
 
-    let request = serde_json::json!({ "op": "sessions_status", "session_id": session_id });
-    if let Err(error) = writeln!(stream, "{request}") {
-        return Reading::because(
-            SessionStatus::Unreachable,
-            format!("could not ask Allele: {error}"),
-        );
-    }
+    writeln!(stream, "{request}").map_err(|error| format!("could not ask Allele: {error}"))?;
 
     let mut line = String::new();
     match BufReader::new(stream).read_line(&mut line) {
-        Ok(0) => Reading::because(
-            SessionStatus::Unreachable,
-            "Allele closed the connection without answering",
-        ),
-        Ok(_) => answer(&line),
-        Err(error) => Reading::because(
-            SessionStatus::Unreachable,
-            format!(
-                "Allele did not answer within {} s: {error}",
-                TIMEOUT.as_secs()
-            ),
-        ),
+        Ok(0) => Err("Allele closed the connection without answering".to_string()),
+        Ok(_) => Ok(line),
+        Err(error) => Err(format!(
+            "Allele did not answer within {} s: {error}",
+            TIMEOUT.as_secs()
+        )),
     }
 }
 
 #[cfg(not(unix))]
-fn ask(_socket: &Path, _session_id: &str) -> Reading {
-    Reading::because(
-        SessionStatus::Unreachable,
-        "Allele's socket is a Unix socket, which this platform cannot open",
-    )
+fn exchange(_socket: &Path, _request: &serde_json::Value) -> Result<String, String> {
+    Err("Allele's socket is a Unix socket, which this platform cannot open".to_string())
+}
+
+/// Whether Allele confirms that the developer typed a go-ahead in a session — DEV-1347.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GoAhead {
+    /// Allele says, without qualification, that this line was typed in this session.
+    Typed,
+    /// Anything else, and why. The post's basis is `desk`.
+    Unconfirmed(String),
+}
+
+impl Allele {
+    /// Ask Allele whether `line` was typed by the developer into `session_id`.
+    ///
+    /// **Only an unqualified yes is [`GoAhead::Typed`].** Allele has no prompt check yet
+    /// (allele-05-20, `prompts.verify`): today it answers this op with an error, which reads
+    /// as unconfirmed — and so does no socket, a socket that does not answer, an answer that
+    /// is not JSON, and an answer in any shape but `{"result": "prompt_verified", "typed":
+    /// true}`. The basis a post records falls toward the weaker label on every one of
+    /// them; it is never guessed upward.
+    pub fn verify_go_ahead(&self, session_id: &str, line: &str, at: Option<i64>) -> GoAhead {
+        let Some(socket) = self.socket.as_deref().filter(|socket| socket.exists()) else {
+            return GoAhead::Unconfirmed("there is no Allele on this machine to ask".to_string());
+        };
+        let request = serde_json::json!({
+            "op": "prompts_verify",
+            "session_id": session_id,
+            "text": line,
+            "typed_at": at,
+        });
+        let line = match exchange(socket, &request) {
+            Ok(line) => line,
+            Err(detail) => return GoAhead::Unconfirmed(detail),
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            return GoAhead::Unconfirmed("Allele's answer was not JSON".to_string());
+        };
+        match (value["result"].as_str(), value["typed"].as_bool()) {
+            (Some("prompt_verified"), Some(true)) => GoAhead::Typed,
+            (Some("error"), _) => GoAhead::Unconfirmed(format!(
+                "Allele has no prompt check it would answer: {} {}",
+                value["code"].as_str().unwrap_or_default(),
+                value["message"].as_str().unwrap_or_default()
+            )),
+            _ => GoAhead::Unconfirmed("Allele did not confirm the line was typed".to_string()),
+        }
+    }
 }
 
 /// Read one line of Allele's answer.

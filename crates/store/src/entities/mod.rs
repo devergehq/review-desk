@@ -17,6 +17,7 @@ pub(crate) mod inbox;
 mod layer;
 mod message;
 pub(crate) mod outcome;
+pub(crate) mod posted;
 pub(crate) mod provenance;
 mod request;
 pub(crate) mod review;

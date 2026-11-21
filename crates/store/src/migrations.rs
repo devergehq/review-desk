@@ -88,6 +88,10 @@
 //! other table hangs off `reviews (id)`, because until it a pull request entered the
 //! record by a session opening a round — and a request waiting in the dispatcher's backlog
 //! was therefore on GitHub, in the dispatcher, and nowhere on the queue.
+//!
+//! Version 25 is the first record of a GitHub *write*: one row per attempt to post a
+//! review through `review-desk post` (DEV-1347), with the salt its hidden tag was keyed
+//! with, and the one random id that tells this database's tags from another Mac's.
 
 use rusqlite::Connection;
 
@@ -1913,6 +1917,65 @@ CREATE TRIGGER drafts_rev_on_section_delete AFTER DELETE ON draft_sections
 BEGIN
     UPDATE drafts SET rev = rev + 1 WHERE review_id = OLD.review_id;
 END;
+"#,
+    },
+    Migration {
+        version: 25,
+        name: "posted-tags",
+        sql: r#"
+-- **A review posted through Review Desk carries a tag, and this is the record behind it** —
+-- DEV-1347, under DEV-1345.
+--
+-- `review-desk post` writes a row here *before* it calls GitHub, as `pending`, and moves it
+-- to `posted` with the GitHub review's id or to `failed` with what went wrong. A `pending`
+-- row is the one state that says "we do not know whether it went up", so while one exists
+-- for a review a second post is refused rather than risking the review twice.
+--
+-- **The salt never leaves this table.** Each row has 32 random bytes of its own, and the
+-- tag on GitHub holds only HMACs keyed with it, so nothing on the pull request — not the
+-- body's hash, not the go-ahead line — can be recomputed by someone without this record.
+-- `UNIQUE` because two rows keyed alike would be two tags that could be told apart only by
+-- what they hash, which is what the salt is there to hide.
+--
+-- `statement` is the approval statement the HMAC was taken over (`review-desk/approval@1`,
+-- as JCS), kept so that a tag read back can be checked against the salt rather than merely
+-- looked up. `go_ahead_line` is the line the developer typed, kept here and never posted.
+CREATE TABLE posted_tags (
+    id               INTEGER PRIMARY KEY,
+    review_id        INTEGER NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+    github_review_id TEXT UNIQUE,
+    status           TEXT    NOT NULL CHECK (status IN ('pending', 'posted', 'failed')),
+    salt             BLOB    NOT NULL UNIQUE CHECK (length(salt) = 32),
+    statement        TEXT    NOT NULL,
+    statement_hmac   TEXT    NOT NULL CHECK (length(statement_hmac) = 64),
+    line_hmac        TEXT    CHECK (line_hmac IS NULL OR length(line_hmac) = 64),
+    go_ahead_line    TEXT,
+    go_ahead_at      INTEGER,
+    session_id       TEXT    NOT NULL,
+    basis            TEXT    NOT NULL CHECK (basis IN ('typed', 'desk')),
+    install_id       TEXT    NOT NULL,
+    created_at       INTEGER NOT NULL,
+    posted_at        INTEGER,
+    failure          TEXT,
+    CHECK ((status = 'posted') = (github_review_id IS NOT NULL)),
+    CHECK ((status = 'posted') = (posted_at IS NOT NULL)),
+    CHECK ((status = 'failed') = (failure IS NOT NULL)),
+    CHECK ((line_hmac IS NULL) = (go_ahead_line IS NULL))
+);
+
+-- One attempt in flight per review, and one success.
+CREATE UNIQUE INDEX posted_tags_one_pending ON posted_tags (review_id) WHERE status = 'pending';
+CREATE UNIQUE INDEX posted_tags_one_posted  ON posted_tags (review_id) WHERE status = 'posted';
+CREATE INDEX posted_tags_by_statement ON posted_tags (statement_hmac);
+
+-- **Which database wrote a tag**, so a reader can say "this Mac has no record of it" rather
+-- than "nobody does". Random, written once, here, and never changed: card 06-9's rule.
+-- Twelve hex characters, because the tag has 220 bytes and this is what is left of them.
+CREATE TABLE installation (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    install_id TEXT    NOT NULL CHECK (length(install_id) = 12)
+);
+INSERT INTO installation (id, install_id) VALUES (1, lower(hex(randomblob(6))));
 "#,
     },
 ];

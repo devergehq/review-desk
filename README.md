@@ -673,12 +673,86 @@ nothing to show for it. `threads[].finding_key` is the same string, for the
 `review-desk finding link` that follows.
 
 `draft posted` records that the session has posted it, and which GitHub review it
-became. **Refused unless the draft is approved.** This is the only transition that
-involves GitHub, and the session makes it: Review Desk never posts.
+became. **Refused unless the draft is approved.** A session that posted with raw `gh`
+reports the review this way.
 
 ```sh
 review-desk draft posted --review "$REVIEW" --github-review gh-review-3312
 ```
+
+#### Posting through Review Desk
+
+**`review-desk post` is the one command that writes to GitHub** (DEV-1347). It posts the
+approved draft itself, through the developer's existing `gh` login (Review Desk stores no
+GitHub token), and records the result:
+
+```sh
+review-desk post "$REVIEW" --session "$SESSION_ID" --go-ahead-at 1763700000 \
+  --go-ahead-file go-ahead.txt
+```
+
+It does these steps in order, and stops at the first one that fails:
+
+1. **It refuses, and posts nothing, unless the draft is `approved` and is still the draft
+   that was approved.** It rebuilds the approval statement from the body hash, the threads
+   hash and the revision that DEV-1346 records at sign-off, and compares them with the
+   draft now. A draft that moved is refused with `changed_since_shown`.
+2. It commits a `pending` row in `posted_tags` **before** it calls GitHub.
+3. It sends the body, the threads, the event and `commit_id`, pinned to the reviewed head,
+   in one `POST repos/<repo>/pulls/<n>/reviews`. **The tag is already at the end of the
+   body**, so no edit follows the post.
+4. It marks the row `posted` with the GitHub review id, which marks the draft `posted` in
+   the same transaction. A refused or unreachable call marks it `failed` instead, and
+   leaves no `github_review_id`.
+
+**While a `pending` row exists, a second `post` is refused** with `post_in_flight`. A
+pending row is a call that may have reached GitHub: `gh` answered with something that
+could not be read, or the process died mid-call. Check the pull request before you go on.
+A `failed` row may be retried, and each retry gets a new salt.
+
+**The tag** is one HTML comment at the end of the body. It is at most 220 bytes, with no
+newline. GitHub does not draw it:
+
+```
+<!-- review-desk:posted v=1 install=<id> basis=typed|desk statement=hmac:<64 hex> [line=hmac:<64 hex>] -->
+```
+
+* `statement` is `HMAC-SHA256(salt, "review-desk/statement\0" ‖ JCS(approval))`. The
+  approval statement is `review-desk/approval@1`:
+
+  | Field | Value |
+  | -- | -- |
+  | `schema` | `review-desk/approval@1` |
+  | `review_id`, `repo`, `pr`, `head_sha`, `round` | the review's identity |
+  | `event` | the event approved |
+  | `body_sha256`, `threads_sha256`, `draft_rev` | what DEV-1346 recorded at approval |
+
+  It is serialised as RFC 8785 canonical JSON.
+* `line` is `HMAC-SHA256(salt, "review-desk/line\0" ‖ NFC(trimmed go-ahead line))`. The
+  line itself stays in the record.
+* **The salt is 32 random bytes per post, and it never leaves the record.** So the same
+  line on two reviews gives two `line` values, and nobody reading the pull request can
+  confirm a guess about any input.
+* `install` is random, written once per database by migration 25. It says which Mac's
+  record a tag belongs to.
+* `basis=typed` only when Allele confirms that the developer typed the go-ahead in that
+  session. Anything less is `basis=desk`, and that includes Allele having no such check,
+  which is the case today (`prompts.verify` is not built). It always falls to the weaker
+  label.
+
+A reader (`Store::read_tag`) rejects unknown keys such as `seq=` or `key=`, any `sha256:`
+value, and a second tag. It reads a body back as one of these:
+
+| Tag on GitHub | Read as |
+| -- | -- |
+| `basis=typed`, digest held | Posted through Review Desk after you said go ahead in the session (Allele saw it typed) |
+| `basis=desk`, digest held | Posted through Review Desk; nobody checked who said go ahead |
+| digest not in this Mac's record | Says it went through Review Desk, but this Mac has no record of it |
+| no tag | Posted without going through Review Desk |
+
+**Raw `gh` posting still works.** `draft handover` and `draft posted` are unchanged, so
+nothing stops a session posting without `post`. A review posted that way carries no tag,
+and reads as "Posted without going through Review Desk". No screen shows this reading yet.
 
 A draft goes `drafting → ready → approved → posted`, with `ready ⇄ sent_back` and
 `approved → sent_back`. **That last one is the way out of a sign-off**, and it is the
@@ -1008,6 +1082,8 @@ With `--json`, the document carries the reason as well:
 | `gh_not_authenticated` | `gh` is installed but nobody is logged in |
 | `gh_failed` | `gh` ran and failed for some other reason |
 | `github_response_unreadable` | A response from GitHub was not the shape it had to be |
+| `post_in_flight` | `post` was refused: an earlier post of this review is still `pending`, and may have reached GitHub |
+| `no_randomness` | The operating system's randomness could not be read, so `post` could not make a salt |
 
 `kind` is `refused` for exit 1 and `broken` for exit 2, so a caller reading only standard
 output learns the same thing the exit code says.
@@ -1066,8 +1142,9 @@ author's credited authors with upstream work on 79 of 268 reviewed pull requests
 ### What it needs, and what it skips
 
 * GitHub is reached by running `gh`, as the Locus linters do, so the developer's
-  existing login is used and Review Desk handles no tokens. **Every call is a read; the
-  harvester never posts to GitHub.**
+  existing login is used and Review Desk handles no tokens. **Every call the harvester
+  makes is a read.** The one GitHub write in Review Desk is `review-desk post`; see
+  [Posting through Review Desk](#posting-through-review-desk).
 * A finding with no linked GitHub comment is skipped for replies and resolution — there
   is no thread to read — and is still checked for a later code change. The run says how
   many were skipped.
@@ -1872,8 +1949,9 @@ be one that could be told the wrong one.
 
 **Approving does not post.** It sets the draft's status, stores the chosen event and the
 time, and stops. The review session finds the approved draft and posts it under the
-developer's name, then records the GitHub review id through `review link
---github-review`, which is what moves the status to `posted`.
+developer's name, with `review-desk post`, which records the GitHub review id and moves
+the status to `posted`. A session that posts with raw `gh` records the id through `draft
+posted` instead.
 
 A field the record has no source for is served as `null`, never as zero: session
 liveness, the developer's own pull requests, the CI figures and the replay figures are
@@ -1884,7 +1962,8 @@ all absent rather than measured, and the dashboard has to render the absence.
 `POST /reviews` reads a pull request's head commit when the caller omits one, which is
 what the Inbox screen needs: it has only a pasted link. The read goes through
 `crates/harvest`'s `GitHub` trait — four read-only methods, run through `gh`, so the
-developer's existing login is used and Review Desk handles no tokens.
+developer's existing login is used and Review Desk handles no tokens. The server writes
+nothing to GitHub. The one write is the `review-desk post` command, not this server.
 
 **The request is checked in full before anything reaches for GitHub.** A malformed link
 is refused with `invalid_value`, not with a report that `gh` is missing, so a machine

@@ -4,10 +4,14 @@
 //! login the developer already has is the login it uses — and when there is none, the
 //! message says so rather than reporting an empty pull request.
 //!
-//! Every call here is a read. **Nothing in this module writes to GitHub.**
+//! Every call here is a read except one: [`Gh::post_review`], which `review-desk post`
+//! uses to put a review the developer approved on the pull request (DEV-1347). **It is the
+//! one GitHub write in Review Desk**, and it goes through the same `gh` login as the reads,
+//! so Review Desk still stores no GitHub token of its own.
 
 use std::ffi::{OsStr, OsString};
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use crate::error::{HarvestError, Result};
 use crate::github::{BlobAt, CommitFiles, Comparison, GitHub, PullRequest, ReviewThread};
@@ -68,8 +72,38 @@ impl Gh {
         }
     }
 
+    /// Post a review on a pull request: `POST repos/<repo>/pulls/<pr>/reviews`, with
+    /// `payload` as the request body. Returns the id of the review GitHub created.
+    ///
+    /// **The one write.** The payload is built by the caller from the record — the body
+    /// with its tag already at the end, the threads, the event and `commit_id` — and is sent
+    /// as it is, on standard input, so nothing in it passes through an argument list.
+    pub fn post_review(&self, repo: &str, pr: i64, payload: &str) -> Result<String> {
+        let answer = self.run_with_input(
+            [
+                "api",
+                "--method",
+                "POST",
+                &format!("repos/{repo}/pulls/{pr}/reviews"),
+                "--input",
+                "-",
+            ],
+            Some(payload.as_bytes()),
+        )?;
+        wire::created_review_id(&answer)
+    }
+
     /// Run `gh` with these arguments and return its standard output.
     fn run<I, S>(&self, args: I) -> Result<String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        self.run_with_input(args, None)
+    }
+
+    /// Run `gh`, writing `input` to its standard input when there is any.
+    fn run_with_input<I, S>(&self, args: I, input: Option<&[u8]>) -> Result<String>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -79,20 +113,33 @@ impl Gh {
             .map(|arg| arg.as_ref().to_owned())
             .collect();
 
-        let output =
-            Command::new(&self.program)
-                .args(&args)
-                .output()
-                .map_err(|error| match error.kind() {
-                    // Told apart deliberately: "gh is not installed" and "gh is not logged
-                    // in" are both exit 2, but a developer fixes them differently.
-                    std::io::ErrorKind::NotFound => HarvestError::GhMissing,
-                    _ => HarvestError::GhFailed {
-                        args: describe(&args),
-                        status: error.kind().to_string(),
-                        stderr: error.to_string(),
-                    },
-                })?;
+        let spawn_error = |error: std::io::Error| match error.kind() {
+            // Told apart deliberately: "gh is not installed" and "gh is not logged
+            // in" are both exit 2, but a developer fixes them differently.
+            std::io::ErrorKind::NotFound => HarvestError::GhMissing,
+            _ => HarvestError::GhFailed {
+                args: describe(&args),
+                status: error.kind().to_string(),
+                stderr: error.to_string(),
+            },
+        };
+
+        let mut child = Command::new(&self.program)
+            .args(&args)
+            .stdin(if input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(spawn_error)?;
+        if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+            // Dropped at the end of this block, which closes it and lets `gh` read to EOF.
+            stdin.write_all(input).map_err(spawn_error)?;
+        }
+        let output = child.wait_with_output().map_err(spawn_error)?;
 
         if output.status.success() {
             return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
