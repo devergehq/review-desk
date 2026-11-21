@@ -109,11 +109,38 @@ request's state, which moved up one line to where the row's other facts about th
 request are — and the sentence around it, "pull request … at the last harvest", which named
 the row's own subject and repeated the basis the clause beside it had just given.
 
+## DEV-880 — a diagram that is not a diagram
+
+| File | What it is |
+| -- | -- |
+| `dev-880-before.png` | A brief whose `diagram` field holds a hand-drawn text sketch, **before** the fix. mermaid rejected it and left its own error graphic — a bomb, "Syntax error in text", "mermaid version 12.1.0" — at the bottom of the document, outside the card that asked for the diagram and outside the app's root element. It then stayed there on every page the developer opened. |
+| `dev-880-after.png` | The same page after. The sketch is where the diagram would be, shown as written, and nothing is below the last card. |
+
+**The sketch in both is verbatim**, down to the line breaks: it is what a review session
+actually wrote into a brief's `diagram` field on 10 October 2026, not something drawn to
+illustrate the bug. That is why it describes an OAuth authorize-and-redirect flow while the
+sample review it sits on is about caching a permissions lookup — the two do not match, and
+the real one did not either. A sketch written to fit the brief would have made a tidier
+picture of a failure nobody had seen. `e2e/harness.ts` seeds the same text.
+
+Both are sample mode, because sample mode is the only place with a brief that carries one
+of these. Made the same way as the `uplift/` shots below:
+
+```sh
+cd web && pnpm run dev
+```
+
+then Playwright at `{width: 1440, height: 1000}`, `deviceScaleFactor: 2`, `fullPage`, on
+`/reviews/16?sample`. For the "before", `app/components/MermaidFigure.vue` at its state
+before this pull request and nothing else changed.
+
 ## DEV-892 — six defects a real review showed, and a seventh
 
-**The `understanding-` pictures above carry it.** `dev-892-2-numbers-in-full.png`, the
-Alternatives page's matrix, went with that page when the review became five tabs (DEV-1330
-removed the picture of a route that no longer exists). The matrix headings and the
+| File | What it is |
+| -- | -- |
+| `dev-892-2-numbers-in-full.png` | The Alternatives matrix headed by its labels — "1 · the shared slot", not a sentence wrapped ten lines deep — with the fold under it open: every number, its label and the line that used to be the heading. |
+
+**The `understanding-` pictures above carry the rest of it.** The matrix headings and the
 part cards are what those three are pictures of, and a defect in how a page reads is fixed
 in the picture of the page rather than in a picture of its own. What changed in them:
 
