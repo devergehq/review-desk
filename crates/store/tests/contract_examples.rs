@@ -2557,6 +2557,35 @@ fn every_response_example_can_be_produced_from_the_store() {
         store
             .record_send_back_message(review, "Regrade it.")
             .expect("a send-back note");
+        // An ask about a finding, and the session's answer to it in the contract's shape.
+        let about_f13 = review_desk_store::About {
+            tab: review_desk_store::ReviewTab::Findings,
+            finding: Some(13),
+        };
+        let asked = store
+            .ask_session_about(
+                review,
+                ReviewLayerName::Draft,
+                Some(about_f13),
+                "Every tenant?",
+            )
+            .expect("asking about a finding");
+        store
+            .answer_from_session(
+                review,
+                ReviewLayerName::Draft,
+                &std::fs::read_to_string(examples().join("listMessages.response.json"))
+                    .map(|text| {
+                        let example: Value = serde_json::from_str(&text).expect("JSON");
+                        example["messages"][4]["body"]
+                            .as_str()
+                            .expect("the example's answer body")
+                            .to_string()
+                    })
+                    .expect("the example"),
+                Some(asked.seq),
+            )
+            .expect("answering in the contract's shape");
         let messages = store.messages(review).expect("the conversation");
         let document = |message: &review_desk_store::ReviewMessage| {
             json!({
@@ -2570,6 +2599,10 @@ fn every_response_example_can_be_produced_from_the_store() {
                 "created_at": message.created_at,
                 "read_at": message.read_at,
                 "read_by_session": message.read_by_session,
+                "about": message.about,
+                "parsed": message.parsed(),
+                "answer": message.answer,
+                "superseded_by": message.superseded_by,
             })
         };
         fields += check(

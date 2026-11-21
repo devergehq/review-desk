@@ -21,6 +21,7 @@
 
 #![deny(missing_debug_implementations)]
 
+pub mod answer;
 pub mod clock;
 mod entities;
 pub mod error;
@@ -34,6 +35,10 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 
+pub use crate::answer::{
+    About, Answer, AnswerAbout, AnswerKind, Basis, FindingNumber, Point, ReplyCall, ReviewTab,
+    Suggestion, SuggestionType,
+};
 pub use crate::clock::Clock;
 pub use crate::entities::brief_structure::{
     BlindPassState, BriefBlindPass, BriefDisagreement, BriefFlowBox, BriefFlowRow, BriefOpenChoice,

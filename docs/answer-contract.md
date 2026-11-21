@@ -37,22 +37,35 @@ The rules that already hold keep holding:
 | `not_sure` | no | 0–1, ≤200 characters | What it couldn't check, said plainly |
 | `suggests` | no | 0–3 items, from the list below | Actions the developer can accept with one click |
 | `activity` | while `kind` is `working` | ≤6 steps, each ≤60 characters | What it is doing now |
-| `about` | no | a step, a finding, or a reply | What the answer is about, so the page can link it |
-| `asked` | no | ≤200 characters | One-way mode only: the question as the session recorded it |
+| `about` | no | exactly one of `{"step": …}`, `{"finding": "F9"}`, `{"reply": "F3"}` | What the answer is about, so the page can link it. `step` takes a tab (`overview`, `understanding`, `findings`, `draft`, `replies`) or one of the seven step names |
+| `asked` | no | ≤200 characters | One-way mode only: the question as the session recorded it. Refused on a reply that names the developer's message (`--to`) |
 
 Severity words are **blocker, should, question, nit**. Basis words are **ran, read, told**.
+
+**How the limits are read.** A length is in characters, not bytes. "1 sentence" is checked as
+one line: whether a line is one sentence is not something a parser can say without guessing at
+the full stop in `ExportController.php`. A field the table does not name is refused. **An
+answer claims something** when its `kind` is `answer`, or when any reply makes a point or
+suggests an action; that is when it must cite. `activity` is required on a `working` reply and
+refused on the other two. Cites are checked for being strings that say something, and **never
+resolved** against the record: a SHA, `criterion 3` or a finding from another round all pass.
 
 ## What it may suggest, and only these
 
 | `type` | Carries | Accepting it | Key on the page |
 | -- | -- | -- | -- |
-| `new_finding` | severity, title, where, basis | adds a finding to *To post* | — |
-| `regrade` | finding, from, to, why | regrades the finding | `G` |
-| `add_to_draft` | finding, or one sentence | edits the finding's wording | `E` |
-| `set_aside` | finding, why | sets the finding aside | `S` |
-| `answer_question` | which of the five questions, the answer | ticks it on Overview | — |
-| `draft_reply` | finding, `R`/`A`/`W`, the words | fills the reply on Replies | `R` `A` `W` |
-| `follow_up` | one question | fills the ask box | — |
+| `new_finding` | `severity`, `title` (≤100), `where` (≤200), `basis` | adds a finding to *To post* | — |
+| `regrade` | `finding`, `from`, `to` (not `from`), `why` (≤200) | regrades the finding | `G` |
+| `add_to_draft` | `finding`, or `text` (one sentence, ≤200), or both | edits the finding's wording | `E` |
+| `set_aside` | `finding`, `why` (≤200) | sets the finding aside | `S` |
+| `draft_reply` | `finding`, `call` (`raise_again`, `accept_reason` or `withdraw`: `R`/`A`/`W`), `words` (≤600) | fills the reply on Replies | `R` `A` `W` |
+| `follow_up` | `question` (≤200) | fills the ask box | — |
+
+A `finding` is written `F` and its number, as `F9`. Every field a row names is required unless
+the row says "or". The list is defined once, as `SuggestionType` in
+`crates/store/src/answer.rs`; anything that needs it imports it. `answer_question` (tick one
+of Overview's five questions) was dropped by Patrick on 21 November 2026 (DEV-1331): nothing
+stores a tick for it to accept into, so a reply that suggests it does not parse.
 
 A suggestion of any other type makes the whole answer not parse.
 
@@ -62,6 +75,20 @@ A suggestion of any other type makes the whole answer not parse.
 *Show the rest (n words)* fold, the line *"No cites and no basis, so no actions are offered and it
 isn't kept with the review"*, and one button, **Ask it again, in the format**. It is kept only as
 the raw message, flagged as not parsed; it never reaches a finding, a draft or a count.
+
+## How it is kept
+
+| Reply | Kept as | Counted | Superseded |
+| -- | -- | -- | -- |
+| `answer` | the raw body, and the answer beside it | yes | never |
+| `working` | the same; it must name the question it works on (`--to`) | never | by the next parsed reply to that question |
+| `cant` | the same | no | by a later parsed `answer` to that question |
+| prose (`--body`) | the raw body alone, not parsed | never | never; it supersedes nothing either |
+
+**Only a reply that names the same question supersedes**: an `answer` sent without `--to`
+leaves an earlier `working` live, so send the answer with the `--to` the `working` reply had.
+Nothing is deleted: a superseded reply stays in the conversation, and `superseded_by` on the
+wire names the reply that replaced it.
 
 ## Example
 
@@ -85,7 +112,7 @@ the raw message, flagged as not parsed; it never reaches a finding, a draft or a
 
 ## Who checks it
 
-**The server**, on `message reply`, before it is kept; the CLI prints the first failing rule and
-exits non-zero so the session can resend. The page never re-validates and never repairs. The
+**The server**, on `message reply --answer`, before it is kept; the CLI prints the first failing
+rule and exits 1 so the session can resend, and nothing is kept. The page never re-validates and never repairs. The
 session is told the contract with every question it is asked (the watcher includes this file's
 *fields* and *suggests* tables in the delivery).
