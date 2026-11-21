@@ -916,11 +916,19 @@ const SET_BY_THE_CARRY: &[&str] = &[
 ];
 
 /// Columns a carried finding deliberately does not get, each with its reason.
-const NOT_CARRIED: &[(&str, &str)] = &[(
-    "github_comment_id",
-    "a round posts its own comments, and `findings_by_github_comment` is UNIQUE — \
+const NOT_CARRIED: &[(&str, &str)] = &[
+    (
+        "github_comment_id",
+        "a round posts its own comments, and `findings_by_github_comment` is UNIQUE — \
          copying it would make the carry itself fail",
-)];
+    ),
+    (
+        "prompted_by",
+        "a message's number is on its own review, so on the next round's review it would name \
+         a different message — and the carried finding was not added from this round's \
+         conversation (DEV-1334)",
+    ),
+];
 
 /// Child tables of `findings` a carry copies, each with its reason.
 ///

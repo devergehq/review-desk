@@ -36,8 +36,8 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 
 pub use crate::answer::{
-    About, Answer, AnswerAbout, AnswerKind, Basis, FindingNumber, Point, ReplyCall, ReviewTab,
-    Suggestion, SuggestionType,
+    About, Accepting, Answer, AnswerAbout, AnswerKind, Basis, FindingNumber, Point, ReplyCall,
+    ReviewTab, Suggestion, SuggestionType,
 };
 pub use crate::clock::Clock;
 pub use crate::entities::brief_structure::{
@@ -59,20 +59,20 @@ pub use crate::error::{Result, StoreError};
 pub use crate::migrations::newest_version;
 pub use crate::model::{
     now, Actor, AuthorResponse, Brief, BriefOption, Carryable, DecidedBy, Decision, DecisionMade,
-    DiffAtHead, Disposition, Draft, DraftHandover, DraftLint, DraftSection, DraftSectionKind,
-    DraftShown, DraftStatus, DraftThread, DuplicateRounds, ExtraRound, Finding, FindingAnchor,
-    FindingCarry, FindingDecision, FindingHunk, FindingInRound, FindingRef, FoldedRound,
-    FreshSessionRequest, FullReview, HeadUpdate, HeadUpdateKind, HeadUpdates, HunkLine,
-    HunkLineMarker, LayerFact, LeftTheDesk, MessageAuthor, MessageKind, NewBrief, NewDraft,
-    NewDraftSection, NewFinding, NewLayerFact, NewOutcome, NewReview, NewRoundCommit, NewRule,
-    NitTicket, NitTicketStatus, NotForSigning, OpenedAction, OpenedReview, OutOfPlay, Outcome,
-    OutcomeKind, PostBasis, PostedReview, PostedTag, PostedTagStatus, PrState, RepoSummary, Review,
-    ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer, ReviewLayerName,
-    ReviewLayerRun, ReviewLayerState, ReviewLinks, ReviewMessage, ReviewRequest, ReviewStep,
-    ReviewTimings, ReviewWork, ReviewsShown, RoundCommit, RoundRef, RoundStatus, RoundStatusCounts,
-    RoundSummary, Rule, RuleCounts, RuleException, RuleScope, RuleStage, RulesSummary, Severity,
-    SignOff, TagReading, TidyAct, Timestamp, Verification, WorkFilter, WorkItem, WorkKind,
-    ACTIVE_RULES_CAP,
+    DeveloperFinding, DiffAtHead, Disposition, Draft, DraftHandover, DraftLint, DraftSection,
+    DraftSectionKind, DraftShown, DraftStatus, DraftThread, DuplicateRounds, ExtraRound, Finding,
+    FindingAnchor, FindingCarry, FindingDecision, FindingHunk, FindingInRound, FindingRef,
+    FoldedRound, FreshSessionRequest, FullReview, HeadUpdate, HeadUpdateKind, HeadUpdates,
+    HunkLine, HunkLineMarker, LayerFact, LeftTheDesk, MessageAuthor, MessageKind, NewBrief,
+    NewDraft, NewDraftSection, NewFinding, NewLayerFact, NewOutcome, NewReview, NewRoundCommit,
+    NewRule, NitTicket, NitTicketStatus, NotForSigning, OpenedAction, OpenedReview, OutOfPlay,
+    Outcome, OutcomeKind, PostBasis, PostedReview, PostedTag, PostedTagStatus, PrState, PromptedBy,
+    RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent, ReviewFacts, ReviewLayer,
+    ReviewLayerName, ReviewLayerRun, ReviewLayerState, ReviewLinks, ReviewMessage, ReviewRequest,
+    ReviewStep, ReviewTimings, ReviewWork, ReviewsShown, RoundCommit, RoundRef, RoundStatus,
+    RoundStatusCounts, RoundSummary, Rule, RuleCounts, RuleException, RuleScope, RuleStage,
+    RulesSummary, Severity, SignOff, SuggestionAnswer, SuggestionVerdict, TagReading, TidyAct,
+    Timestamp, Verification, WorkFilter, WorkItem, WorkKind, ACTIVE_RULES_CAP,
 };
 /// Whether a string is a repository name — the one copy of that rule. See
 /// [`normalise::is_repo_name`].

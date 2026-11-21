@@ -207,6 +207,12 @@ impl Api {
             Operation::DecideFinding { review_id, seq } => {
                 self.decide_finding(review_id, seq, body)
             }
+            Operation::AddFinding { review_id } => self.add_finding(review_id, body),
+            Operation::DismissSuggestion {
+                review_id,
+                seq,
+                suggestion,
+            } => self.dismiss_suggestion(review_id, seq, suggestion, body),
             Operation::GetDraft { review_id } => self.draft(review_id),
             Operation::SaveDraft { review_id } => self.save_draft(review_id, body),
             Operation::ApproveDraft { review_id } => self.approve_draft(review_id, body),
@@ -1341,7 +1347,54 @@ impl Api {
     /// `GET /reviews/{reviewId}/messages`: the review's conversation, oldest first.
     fn messages(&self, review_id: i64) -> Result<(u16, Value), ApiError> {
         let messages = self.records.messages(review_id)?;
-        Ok((200, wire::message_list(review_id, &messages)))
+        let answers = self.records.suggestion_answers(review_id)?;
+        Ok((200, wire::message_list(review_id, &messages, &answers)))
+    }
+
+    /// `POST /reviews/{reviewId}/findings`: the developer adds a finding from the
+    /// conversation — DEV-1334.
+    ///
+    /// **The one developer-side call that adds a finding** (Patrick, 21 November 2026):
+    /// behind Accept on a `new_finding` suggestion and *Turn into a finding* on an answer.
+    /// The finding goes into *To post* with no block of the draft, and carries the reply
+    /// that prompted it as `prompted_by`. A session raises findings with `review-desk
+    /// finding add`, which never reaches this server.
+    fn add_finding(&self, review_id: i64, body: &[u8]) -> Result<(u16, Value), ApiError> {
+        let request: AddFindingRequest = read_body(body)?;
+        let finding = review_desk_store::DeveloperFinding {
+            severity: request.severity.parse().map_err(ApiError::from)?,
+            title: request.title,
+            at: request.at,
+            basis: request.basis.parse().map_err(ApiError::from)?,
+        };
+        self.records.review(review_id)?;
+        let added =
+            self.records
+                .add_finding_from_conversation(review_id, &finding, request.prompted_by)?;
+        Ok((201, wire::finding(&added)))
+    }
+
+    /// `POST /reviews/{reviewId}/messages/{seq}/suggestions/{n}/dismiss`: the developer
+    /// dismisses one suggestion, with their reason when they give one — DEV-1334.
+    ///
+    /// Said again on a dismissed suggestion, it keeps the dismissal and replaces the reason,
+    /// so the card can take the reason after the click. Refused on an accepted one.
+    fn dismiss_suggestion(
+        &self,
+        review_id: i64,
+        seq: i64,
+        suggestion: i64,
+        body: &[u8],
+    ) -> Result<(u16, Value), ApiError> {
+        let request: DismissSuggestionRequest = read_body(body)?;
+        self.records.review(review_id)?;
+        let answered = self.records.dismiss_suggestion(
+            review_id,
+            seq,
+            suggestion,
+            request.reason.as_deref(),
+        )?;
+        Ok((200, wire::suggestion_answer(&answered)))
     }
 
     /// `POST /reviews/{reviewId}/messages`: the developer asks the review's session.
@@ -1682,7 +1735,7 @@ impl Api {
         self.records.review(review_id)?;
         self.records.finding(review_id, seq)?;
 
-        let made = self.records.decide_finding(
+        let made = self.records.decide_finding_prompted(
             review_id,
             seq,
             &Decision {
@@ -1697,6 +1750,9 @@ impl Api {
                 text: request.text,
                 note: trimmed(request.note),
             },
+            // DEV-1334: Accept on a suggestion is this same call, naming the reply and the
+            // suggestion that prompted it. The decision stays the developer's.
+            request.prompted_by,
         )?;
 
         // The finding, the outcome and the whole draft, because the review page draws all
@@ -2187,6 +2243,29 @@ struct DecideFindingRequest {
     text: Option<String>,
     #[serde(default)]
     note: Option<String>,
+    /// The suggestion this decision accepts, when it is an Accept. DEV-1334.
+    #[serde(default)]
+    prompted_by: Option<review_desk_store::PromptedBy>,
+}
+
+/// `AddFindingRequest` from the contract. DEV-1334.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AddFindingRequest {
+    severity: String,
+    title: String,
+    #[serde(rename = "where")]
+    at: String,
+    basis: String,
+    prompted_by: review_desk_store::PromptedBy,
+}
+
+/// `DismissSuggestionRequest` from the contract. DEV-1334.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DismissSuggestionRequest {
+    #[serde(default)]
+    reason: Option<String>,
 }
 
 /// `TicketRestAndApproveRequest` from the contract.

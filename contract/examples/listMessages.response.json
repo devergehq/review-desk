@@ -18,7 +18,8 @@
       },
       "parsed": false,
       "answer": null,
-      "superseded_by": null
+      "superseded_by": null,
+      "suggestion_answers": []
     },
     {
       "review_id": 41,
@@ -37,7 +38,8 @@
       },
       "parsed": false,
       "answer": null,
-      "superseded_by": null
+      "superseded_by": null,
+      "suggestion_answers": []
     },
     {
       "review_id": 41,
@@ -56,7 +58,8 @@
       },
       "parsed": false,
       "answer": null,
-      "superseded_by": null
+      "superseded_by": null,
+      "suggestion_answers": []
     },
     {
       "review_id": 41,
@@ -75,7 +78,8 @@
       },
       "parsed": false,
       "answer": null,
-      "superseded_by": null
+      "superseded_by": null,
+      "suggestion_answers": []
     },
     {
       "review_id": 41,
@@ -124,7 +128,19 @@
           }
         ]
       },
-      "superseded_by": null
+      "superseded_by": null,
+      "suggestion_answers": [
+        {
+          "message": 5,
+          "suggestion": 1,
+          "verdict": "dismissed",
+          "reason": "F9 already says it",
+          "finding_seq": null,
+          "finding_key": null,
+          "outcome_id": null,
+          "answered_at": "2026-10-30T10:57:30Z"
+        }
+      ]
     }
   ]
 }

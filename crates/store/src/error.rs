@@ -59,6 +59,22 @@ pub enum StoreError {
     )]
     AlreadyDismissed { review_id: i64 },
 
+    /// A suggestion the developer has already answered — DEV-1334.
+    ///
+    /// An accepted suggestion is a decision in the record and is not taken twice; a
+    /// dismissed one is not accepted afterwards, and an accepted one is not dismissed. Only
+    /// a dismissal's reason may be said again.
+    #[error(
+        "the suggestion {which} of message {message} on review {review_id} is already {answered}"
+    )]
+    SuggestionAnswered {
+        review_id: i64,
+        message: i64,
+        /// `1`, `2`, `3`, or "behind the whole answer" for *Turn into a finding*.
+        which: String,
+        answered: &'static str,
+    },
+
     /// An act that needs an agent afterwards was asked for on a dismissed review.
     #[error(
         "review {review_id} is dismissed, so no session will be started for it and \
@@ -248,6 +264,7 @@ impl StoreError {
             StoreError::DraftStatus { .. } => "draft_status",
             StoreError::NoDraftSection { .. } => "no_draft_section",
             StoreError::AlreadyDismissed { .. } => "already_dismissed",
+            StoreError::SuggestionAnswered { .. } => "suggestion_answered",
             StoreError::DismissedReview { .. } => "dismissed_review",
             StoreError::FinishedReview { .. } => "finished_review",
             StoreError::SupersededRound { .. } => "superseded_round",
@@ -280,6 +297,7 @@ impl StoreError {
                 | StoreError::DraftStatus { .. }
                 | StoreError::NoDraftSection { .. }
                 | StoreError::AlreadyDismissed { .. }
+                | StoreError::SuggestionAnswered { .. }
                 | StoreError::DismissedReview { .. }
                 | StoreError::FinishedReview { .. }
                 | StoreError::SupersededRound { .. }

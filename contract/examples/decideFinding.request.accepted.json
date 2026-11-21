@@ -1,0 +1,5 @@
+{
+  "decision": "regrade",
+  "severity": "blocker",
+  "prompted_by": { "message": 5, "suggestion": 1 }
+}

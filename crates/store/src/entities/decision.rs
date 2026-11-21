@@ -32,8 +32,8 @@ use crate::entities::{composition, only_the_developer};
 use crate::error::{Result, StoreError};
 use crate::model::{
     Actor, DecidedBy, Decision, DecisionMade, Disposition, Draft, Finding, FindingDecision,
-    FindingRef, NitTicket, NitTicketStatus, Outcome, OutcomeKind, ReviewEvent, RoundStatus,
-    Timestamp,
+    FindingRef, NitTicket, NitTicketStatus, Outcome, OutcomeKind, PromptedBy, ReviewEvent,
+    RoundStatus, Timestamp,
 };
 use crate::Store;
 
@@ -123,6 +123,27 @@ impl Store {
         decision: &Decision,
         by: Actor,
     ) -> Result<DecisionMade> {
+        self.decide_finding_prompted(review_id, seq, decision, None, by)
+    }
+
+    /// [`Store::decide_finding`], and the suggestion that prompted it — DEV-1334.
+    ///
+    /// **The same call, not a second one.** Accept on a `regrade`, `add_to_draft`,
+    /// `set_aside` or `draft_reply` suggestion is the decision the page's `G`, `E`, `S` or
+    /// `R`/`A`/`W` makes, through this function; `prompted` only adds a row saying which
+    /// reply's suggestion it was, written in the decision's own transaction and naming the
+    /// outcome it recorded. The decision and its outcome are the developer's either way.
+    ///
+    /// Refused when the suggestion is not one this decision accepts, on this finding
+    /// ([`crate::answer::SuggestionType::accepting`]), or has been answered already.
+    pub fn decide_finding_prompted(
+        &self,
+        review_id: i64,
+        seq: i64,
+        decision: &Decision,
+        prompted: Option<PromptedBy>,
+        by: Actor,
+    ) -> Result<DecisionMade> {
         only_the_developer(by, "decide on a finding")?;
         // Every refusal that can be computed from the request alone is computed before the
         // transaction opens, so a malformed decision never leaves half a change behind.
@@ -131,6 +152,9 @@ impl Store {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let finding = self.get_finding(review_id, seq)?;
         let draft = self.get_draft(review_id)?;
+        if let Some(prompted) = prompted {
+            self.check_decision_prompt(review_id, seq, decision.decision, prompted)?;
+        }
 
         if !draft.status.is_writable() {
             return Err(StoreError::DraftStatus {
@@ -269,6 +293,17 @@ impl Store {
             detail.as_deref(),
             self.now(),
         )?;
+
+        if let Some(prompted) = prompted {
+            super::suggestion::write_accepted(
+                &tx,
+                review_id,
+                prompted,
+                None,
+                Some(outcome.id),
+                self.now(),
+            )?;
+        }
 
         let made = DecisionMade {
             finding: self.get_finding(review_id, seq)?,
