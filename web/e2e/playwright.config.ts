@@ -52,6 +52,13 @@ export default defineConfig({
 
   use: {
     ...devices['Desktop Chrome'],
+    /*
+     * **Signed in as the developer on the seeded server** — DEV-1346. Global setup trades
+     * that server's sign-in token and writes the cookie here, so a test signs off the way
+     * the developer does after opening the link `review-desk serve` printed. A spec that
+     * starts a server of its own puts that server's cookie in with `signedIn`.
+     */
+    storageState: 'e2e/.signed-in.json',
     /* Wide enough for the two-column screens, which is what the mockups were drawn at. */
     viewport: { width: 1440, height: 900 },
     /* Kept only for a failure: a passing run should leave nothing behind. */
@@ -76,7 +83,7 @@ export default defineConfig({
        * argument in its own header.
        */
       name: 'desk',
-      testMatch: /(review-desk|header-links|what-happened|rounds|queue-rounds|shell)\.spec\.ts/,
+      testMatch: /(review-desk|header-links|what-happened|rounds|queue-rounds|shell|shown)\.spec\.ts/,
     },
     {
       /*

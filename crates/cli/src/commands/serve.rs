@@ -8,9 +8,17 @@
 //! it on the way out; a report printed after `serve` returned would be printed when the
 //! server stopped, which is far too late to tell anybody where it is. So the URL goes out
 //! first — one JSON document with `--json`, one line without — and then the server runs.
+//!
+//! **And it is the one command that prints the sign-in link** — DEV-1346. Signing off needs
+//! the developer's cookie, which the browser gets by trading a one-time token, and this
+//! output is the only place that token ever appears: as the URL's fragment, only when the
+//! output is a terminal, and never in `--json`. An agent that starts the server in its own
+//! shell is not at a terminal, so it is told how the developer signs in rather than handed
+//! the way to. See `crates/server/src/developer.rs` for what that does and does not stop.
 
 use clap::Args;
 use review_desk_harvest::gh::Gh;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use review_desk_server::{Allele, Github, Hostname, Records, Server, DEFAULT_PORT};
@@ -25,8 +33,9 @@ pub struct ServeArgs {
     /// The port to listen on. 0 asks the operating system for a free one.
     ///
     /// There is no flag for the address: the server binds 127.0.0.1 and nothing else.
-    /// This version has no authentication — reachability is the authorisation — so a flag
-    /// that could widen the bind is one typo away from publishing the whole record.
+    /// Reaching the port is enough to read the whole record — only the six sign-off acts
+    /// need the developer's cookie — so a flag that could widen the bind is one typo away
+    /// from publishing it.
     #[arg(long, value_name = "N", default_value_t = DEFAULT_PORT)]
     port: u16,
 
@@ -52,6 +61,23 @@ pub struct ServeArgs {
     /// Allele does not.
     #[arg(long, value_name = "PATH")]
     allele_socket: Option<PathBuf>,
+}
+
+/// The sign-in link, to a person, or how a person gets one.
+fn print_sign_in(server: &Server, hostname: Option<&Hostname>) {
+    let Some(link) = server.sign_in_url() else {
+        return;
+    };
+    if !std::io::stdout().is_terminal() {
+        // Probably an agent's shell, or a log. The link is not printed.
+        println!("  read-only here: to sign off, run `review-desk serve` in your own terminal");
+        return;
+    }
+    println!("  sign in to sign off, once, in your browser: {link}");
+    if let (Some(name), Some(token)) = (hostname, server.sign_in_token()) {
+        // Either works, once: the cookie belongs to whichever host the browser signs in at.
+        println!("  or through the proxy: https://{name}/#sign-in={token}");
+    }
 }
 
 pub fn run(args: &ServeArgs, json: bool) -> Result<Report> {
@@ -98,6 +124,7 @@ pub fn run(args: &ServeArgs, json: bool) -> Result<Report> {
         if !review_desk_server::assets::embedded() {
             println!("  the front end is not built into this binary; the API is serving");
         }
+        print_sign_in(&server, args.hostname.as_ref());
     }
 
     server.serve();

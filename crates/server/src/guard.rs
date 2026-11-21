@@ -1,9 +1,11 @@
 //! What a request has to prove before it reaches a handler.
 //!
-//! **This server has no authentication: reachability is the authorisation.** That is the
-//! contract's position and it is sound — right up to the point where something *else*
-//! running on the developer's machine can reach it on their behalf. A web page open in
-//! their browser is exactly that thing.
+//! **Reachability is the authorisation for everything but six acts**, and those six need the
+//! developer's cookie as well — `crate::developer`, DEV-1346. That is the contract's
+//! position and it is sound — right up to the point where something *else* running on the
+//! developer's machine can reach it on their behalf. A web page open in their browser is
+//! exactly that thing, and the cookie does not answer it: the page's request would carry
+//! the cookie. These checks do.
 //!
 //! It matters here more than it would on most local servers, because of what this API is.
 //! Confirming a brief and approving a draft happen here and nowhere else, and an approved
@@ -35,9 +37,9 @@
 //! ## What this does not stop
 //!
 //! **Another process on the same machine.** A local program can set any header it likes,
-//! so none of this is a defence against code already running as the developer. That is
-//! the authorisation model the contract states, and closing it needs authentication,
-//! which is out of scope for this version. What these checks buy is the narrower and more
+//! so none of this is a defence against code already running as the developer. The
+//! developer's cookie (`crate::developer`) narrows that for the six sign-off acts — an
+//! agent can no longer sign off with one `curl` — and says plainly what it does not stop. What these checks buy is the narrower and more
 //! valuable thing: a *web page* cannot reach the API, and a web page is the one attacker
 //! that arrives without the developer installing anything.
 

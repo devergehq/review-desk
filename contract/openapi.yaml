@@ -8,7 +8,7 @@ info:
     Review Desk serves this API from a local binary, for one developer, on the loopback
     interface only. The dashboard in `web/` is its only client.
 
-    Four rules hold everywhere in this document:
+    Five rules hold everywhere in this document:
 
     - **Times are RFC 3339 in UTC**, with a `Z` offset. The store holds them as integer
       seconds since the Unix epoch; the server converts at this boundary.
@@ -18,6 +18,11 @@ info:
     - **Errors share one shape**, `Error`, with a machine-readable `code` and a `message`.
     - **Nothing here posts to GitHub.** Approving a draft moves a status. The review
       session reads the approved draft and posts it.
+    - **Reading is open; signing off is the developer's** (DEV-1346). Six operations
+      need the `developerCookie`, which only the developer's browser holds, and the four
+      sign-offs among them are bound to what the page was shown: they send back the
+      `shown` hashes they were served, and a record that has moved since is a `409`
+      `changed_since_shown` that wrote nothing. See `contract/README.md`, "Who may sign off".
 
     Review ids, finding sequence numbers and rule ids are Review Desk's own and are
     integers, matching the store in `crates/store/src/model.rs`.
@@ -31,8 +36,8 @@ info:
 servers:
   - url: http://127.0.0.1:7777/api/v1
     description: |
-      The local server binds 127.0.0.1 only. There is no authentication in this version;
-      reachability is the authorisation. See contract/README.md.
+      The local server binds 127.0.0.1 only. Reaching it is enough to read; signing off
+      needs the developer's cookie as well. See contract/README.md.
 
 tags:
   - name: inbox
@@ -43,6 +48,14 @@ tags:
     description: The draft review and its approval.
   - name: rules
     description: Rules and their stages.
+  - name: developer
+    description: Who may sign off.
+
+# **Anyone who can reach the server may read, by default** — the empty requirement. The six
+# developer acts override it with `developerCookie`. Stated rather than left out, so that an
+# operation with no `security` cannot be read as one nobody decided about.
+security:
+  - {}
 
 paths:
   /inbox:
@@ -300,6 +313,8 @@ paths:
       - $ref: '#/components/parameters/ReviewId'
     post:
       operationId: dismissReview
+      security:
+        - developerCookie: []
       tags: [review]
       summary: Take a review out of play, with a reason
       description: |
@@ -339,6 +354,8 @@ paths:
               schema: { $ref: '#/components/schemas/Review' }
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/NotTheDeveloper'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -474,6 +491,8 @@ paths:
       - $ref: '#/components/parameters/ReviewId'
     post:
       operationId: restoreReview
+      security:
+        - developerCookie: []
       tags: [review]
       summary: Bring a dismissed review back
       description: |
@@ -490,6 +509,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Review' }
+        '401':
+          $ref: '#/components/responses/NotTheDeveloper'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -505,25 +526,39 @@ paths:
       - $ref: '#/components/parameters/ReviewId'
     post:
       operationId: confirmBrief
+      security:
+        - developerCookie: []
       tags: [review]
       summary: Confirm the brief, releasing the layers behind it
       description: |
         The developer's act at layer 2. Sets `confirmed_at` and removes the review from
         the Inbox's "Confirm the problem" group. Confirming an already confirmed brief
         returns the brief unchanged rather than failing.
+
+        **It confirms the brief the page drew** (DEV-1346). The body carries the brief's
+        `sha256` as the page was served it; a brief rewritten since is a `409`
+        `changed_since_shown` and nothing is written.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmBriefRequest' }
       responses:
         '200':
           description: The confirmed brief.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Brief' }
+        '401':
+          $ref: '#/components/responses/NotTheDeveloper'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
           description: |
             The review has no brief to confirm, or it is dismissed — a dismissed review is
             in no agent's work list, so confirming its brief would ask for a layer nothing
-            will carry on past. Bring it back first.
+            will carry on past. Bring it back first. Or `changed_since_shown`: the brief
+            is not the one whose `sha256` was sent.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -865,6 +900,8 @@ paths:
       - $ref: '#/components/parameters/ReviewId'
     post:
       operationId: approveDraft
+      security:
+        - developerCookie: []
       tags: [draft]
       summary: Approve the draft and choose the event it is posted as
       description: |
@@ -877,6 +914,11 @@ paths:
 
         How the session learns of the approval is an open question in the project brief;
         nothing in this contract depends on the answer.
+
+        **It approves the draft the page showed** (DEV-1346). The body carries the `shown`
+        the draft was served with; a draft whose body, threads or revision has moved since
+        is a `409` `changed_since_shown` and nothing is written. What is approved is
+        recorded with the approval, so a later post can be held to it.
       requestBody:
         required: true
         content:
@@ -890,13 +932,16 @@ paths:
               schema: { $ref: '#/components/schemas/DraftDetail' }
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/NotTheDeveloper'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
           description: |
             The draft is not in a state that can be approved, or the review is dismissed —
             a dismissed review is in no agent's work list, so nothing would post it. Bring
-            it back first.
+            it back first. Or `changed_since_shown`: the draft is not the one whose `shown` was
+            sent.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -908,6 +953,8 @@ paths:
       - $ref: '#/components/parameters/ReviewId'
     post:
       operationId: ticketRestAndApprove
+      security:
+        - developerCookie: []
       tags: [draft]
       summary: File what is left as one ticket, and approve, in one step
       description: |
@@ -932,8 +979,12 @@ paths:
         Refused when the draft is not `ready`, and refused when the review has no open
         finding: there would be nothing to file, and nits already held back are asked for
         through `requestNitTicket` on their own.
+
+        **Bound to what was shown, as `approveDraft` is** (DEV-1346), which is why the body
+        is now required. What is recorded as approved is the draft after the ticketed
+        findings have left it: that is the body that posts.
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/TicketRestAndApproveRequest' }
@@ -950,13 +1001,16 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/NotTheDeveloper'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
           description: |
             The draft is not in a state that can be approved, or the review is dismissed —
             a dismissed review is in no agent's work list, so nothing would post it. Bring
-            it back first.
+            it back first. Or `changed_since_shown`: the draft is not the one whose `shown` was
+            sent.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -968,6 +1022,8 @@ paths:
       - $ref: '#/components/parameters/ReviewId'
     post:
       operationId: sendBackDraft
+      security:
+        - developerCookie: []
       tags: [draft]
       summary: Send the draft back to the review session with a note
       description: |
@@ -986,6 +1042,10 @@ paths:
 
         A **posted** draft is not sent back. It is on GitHub, and what follows it is the
         next round rather than an edit of the last one.
+
+        **Bound to what was shown** (DEV-1346): a note about a draft the session has since
+        rewritten is about a draft that no longer exists, so it is a `409`
+        `changed_since_shown` and nothing is written.
       requestBody:
         required: true
         content:
@@ -999,6 +1059,8 @@ paths:
               schema: { $ref: '#/components/schemas/DraftDetail' }
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/NotTheDeveloper'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -1006,6 +1068,50 @@ paths:
             The draft is drafting or posted: only one that is ready, or approved and not
             yet posted, can be sent back. Or the review is dismissed — a dismissed review
             is in no agent's work list, so nothing would revise it. Bring it back first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/StoreUnavailable'
+
+  /developer/sign-in:
+    post:
+      operationId: signIn
+      tags: [developer]
+      summary: Trade the one-time sign-in token for the developer cookie
+      description: |
+        **How the developer's browser comes to hold `developerCookie`** (DEV-1346).
+        `review-desk serve` makes a token when it starts and prints it once, to its own
+        terminal, as the fragment of the dashboard's URL: `#sign-in=<token>`. The page reads
+        the fragment, takes it out of the address bar, and sends it here.
+
+        **The token is spent by the first trade that matches.** A copy in the browser's
+        history or the terminal's scrollback is worth nothing afterwards. The cookie is a
+        different random value, `HttpOnly` and `SameSite=Strict`, and lasts until the
+        server stops.
+
+        The token appears in no response, no log and no other command's output. That
+        stops an agent signing off with one `curl`; it does not stop code running as the
+        developer that sets out to steal a cookie, and `contract/README.md` says so.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignInRequest' }
+      responses:
+        '200':
+          description: Signed in. The cookie is in `Set-Cookie`.
+          headers:
+            Set-Cookie:
+              description: '`rd_developer=<value>; HttpOnly; SameSite=Strict; Path=/`'
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignedIn' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: The token is wrong, or already spent. Restart `review-desk serve` for a new one.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -1255,6 +1361,16 @@ paths:
           $ref: '#/components/responses/StoreUnavailable'
 
 components:
+  securitySchemes:
+    developerCookie:
+      type: apiKey
+      in: cookie
+      name: rd_developer
+      description: |
+        The developer's cookie, from `POST /developer/sign-in`. Required on the six acts
+        that sign something off or change what the developer can see; every read, and
+        every write that is not one of those, is open. A request without it is a `401`
+        `not_the_developer` before anything else about it is looked at.
 
   parameters:
     ReviewId:
@@ -1271,6 +1387,14 @@ components:
       schema: { type: integer, format: int64, minimum: 1 }
 
   responses:
+    NotTheDeveloper:
+      description: |
+        `not_the_developer`: this is the developer's act and the request did not carry the
+        developer's cookie. Open the dashboard from the sign-in link `review-desk serve`
+        printed in its own terminal.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     BadRequest:
       description: The request was understood and refused.
       content:
@@ -1321,11 +1445,17 @@ components:
         loudly. `github_unavailable` means a read Review Desk needed could not be made —
         `gh` missing or not logged in — which is the developer's environment rather than
         their request. Every other code means the request was understood and refused.
+
+        `changed_since_shown` is a `409` like `conflict` and is told apart because the page
+        answers it differently: what the developer was shown has moved, so it reads the
+        record again and shows the change. `not_the_developer` is a `401`.
       enum:
         - bad_request
         - invalid_value
         - not_found
         - conflict
+        - changed_since_shown
+        - not_the_developer
         - github_unavailable
         - store_unavailable
 
@@ -2855,6 +2985,7 @@ components:
         - open_choices
         - disagreements
         - updated_at
+        - sha256
       description: |
         What the review understood before it read the diff. One per review.
 
@@ -2885,6 +3016,12 @@ components:
         confirmed:
           type: boolean
           description: Whether the developer has confirmed it. True exactly when `confirmed_at` is set.
+        sha256:
+          $ref: '#/components/schemas/Sha256'
+          description: |
+            The hash of this brief without its confirmation, which `confirmBrief` sends back
+            as `shown_brief_sha256` (DEV-1346). Leaving the confirmation out is what makes a
+            second confirmation from the same page one confirmation rather than a refusal.
         confirmed_at:
           type: [string, 'null']
           format: date-time
@@ -3865,11 +4002,14 @@ components:
       type: object
       additionalProperties: false
       required:
-        [draft, review, lint, sections, threads, body_is_stale, edits, held_back, nit_ticket,
-         not_for_signing]
+        [draft, shown, review, lint, sections, threads, body_is_stale, edits, held_back,
+         nit_ticket, not_for_signing]
       description: Everything the Draft preview screen shows.
       properties:
         draft: { $ref: '#/components/schemas/Draft' }
+        shown:
+          $ref: '#/components/schemas/ShownDraft'
+          description: What this document shows, for the sign-off endpoints to send back.
         review: { $ref: '#/components/schemas/Review' }
         not_for_signing:
           oneOf:
@@ -4094,9 +4234,11 @@ components:
     TicketRestAndApproveRequest:
       type: object
       additionalProperties: false
+      required: [shown]
       description: |
-        Nothing is required, and the body may be omitted altogether.
+        `shown` is required: what the developer was shown is part of the act.
       properties:
+        shown: { $ref: '#/components/schemas/ShownDraft' }
         note:
           type: [string, 'null']
           description: |
@@ -4126,15 +4268,68 @@ components:
     ApproveDraftRequest:
       type: object
       additionalProperties: false
-      required: [event]
+      required: [event, shown]
       properties:
         event: { $ref: '#/components/schemas/ReviewEvent' }
+        shown: { $ref: '#/components/schemas/ShownDraft' }
+
+    ShownDraft:
+      type: object
+      additionalProperties: false
+      required: [body_sha256, threads_sha256, draft_rev]
+      description: |
+        What a developer reading the draft is shown, served on `DraftDetail.shown` and sent
+        back with every sign-off on the draft (DEV-1346). A page sends the `shown` of the
+        document it rendered, not one it read afterwards.
+
+        Three values, because each catches a different move. `body_sha256` is the body as
+        it posts; `threads_sha256` is the comments that post beside it, which follow the
+        findings as well as the blocks; `draft_rev` counts every write of either, so the
+        same body written again under the developer still counts as a move.
+      properties:
+        body_sha256: { $ref: '#/components/schemas/Sha256' }
+        threads_sha256: { $ref: '#/components/schemas/Sha256' }
+        draft_rev: { type: integer, format: int64, minimum: 1 }
+
+    Sha256:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+      description: A SHA-256, lower-case hex. Computed by the server; a client sends back what it was served.
+
+    ConfirmBriefRequest:
+      type: object
+      additionalProperties: false
+      required: [shown_brief_sha256]
+      properties:
+        shown_brief_sha256:
+          $ref: '#/components/schemas/Sha256'
+          description: The `sha256` of the brief the page drew.
+
+    SignInRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: The fragment's value, from the link `review-desk serve` printed.
+
+    SignedIn:
+      type: object
+      additionalProperties: false
+      required: [developer]
+      properties:
+        developer:
+          type: boolean
+          const: true
 
     SendBackDraftRequest:
       type: object
       additionalProperties: false
-      required: [note]
+      required: [note, shown]
       properties:
+        shown: { $ref: '#/components/schemas/ShownDraft' }
         note:
           type: string
           minLength: 1

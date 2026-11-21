@@ -59,6 +59,11 @@
       "signoff_withdrawn_head": null,
       "updated_at": "2026-10-08T11:31:00Z"
     },
+    "shown": {
+      "body_sha256": "3e1031ec917287459ff80c4eb99c80f3f0191044beffdf4bd4e59af7aff7e215",
+      "threads_sha256": "199830d7ddbf02889bb9feb167c5a73b0c363f5bcd9e67854707ac12170cabee",
+      "draft_rev": 3
+    },
     "review": {
       "id": 17,
       "repo": "acme/portal",

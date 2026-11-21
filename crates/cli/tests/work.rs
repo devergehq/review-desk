@@ -169,19 +169,40 @@ fn each_of_the_four_kinds_comes_back_from_a_seeded_database() {
     let store = desk.store();
     let id = |review: &str| review.parse::<i64>().expect("an id");
     store
-        .confirm_brief(id(&confirmed), Actor::Developer)
+        .confirm_brief(
+            id(&confirmed),
+            Actor::Developer,
+            &common::brief_shown(&store, id(&confirmed)),
+        )
         .expect("confirm the second");
     store
-        .confirm_brief(id(&sent_back), Actor::Developer)
+        .confirm_brief(
+            id(&sent_back),
+            Actor::Developer,
+            &common::brief_shown(&store, id(&sent_back)),
+        )
         .expect("confirm the third");
     store
-        .send_back_draft(id(&sent_back), "cut F2; it is the same point as F1")
+        .send_back_draft(
+            id(&sent_back),
+            "cut F2; it is the same point as F1",
+            &common::shown(&store, id(&sent_back)),
+        )
         .expect("send the third back");
     store
-        .confirm_brief(id(&approved), Actor::Developer)
+        .confirm_brief(
+            id(&approved),
+            Actor::Developer,
+            &common::brief_shown(&store, id(&approved)),
+        )
         .expect("confirm the fourth");
     store
-        .approve_draft(id(&approved), ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            id(&approved),
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(&store, id(&approved)),
+        )
         .expect("approve the fourth");
 
     let items = work(&desk, &[]);

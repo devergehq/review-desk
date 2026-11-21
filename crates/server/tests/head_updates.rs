@@ -174,7 +174,12 @@ fn a_draft_whose_sign_off_was_withdrawn_says_which_commit_was_approved() {
         .put_draft(review, NewDraft::ready("One finding on the retry path.\n"))
         .expect("a draft");
     store
-        .approve_draft(review, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            review,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(store, review),
+        )
         .expect("the developer signed it off");
     store
         .open_review(REPO, 44, "1b7c4e0")

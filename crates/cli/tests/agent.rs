@@ -119,7 +119,11 @@ fn a_whole_review_with_layers_options_a_cited_rule_and_a_draft() {
 
     // The developer confirms, in the dashboard's place. There is no command for it.
     desk.store()
-        .confirm_brief(review.parse().expect("the review id"), Actor::Developer)
+        .confirm_brief(
+            review.parse().expect("the review id"),
+            Actor::Developer,
+            &common::brief_shown(&desk.store(), review.parse().expect("the review id")),
+        )
         .expect("the developer confirms the brief");
     desk.run(&[
         "layer",
@@ -355,6 +359,7 @@ fn a_whole_review_with_layers_options_a_cited_rule_and_a_draft() {
             review.parse().expect("the review id"),
             ReviewEvent::RequestChanges,
             Actor::Developer,
+            &common::shown(&desk.store(), review.parse().expect("the review id")),
         )
         .expect("the developer approves");
 

@@ -9,6 +9,11 @@
     "sent_back_at": null,
     "updated_at": "2026-10-09T22:18:00Z"
   },
+  "shown": {
+    "body_sha256": "7a905b041c5ccce684680ba2a26a105370784aa1af50c49a7265cca595fdd4b1",
+    "threads_sha256": "be47ed0886ff537a000f89fd7f2452725bd28493ac8374b5a37d11b04f5dcd9a",
+    "draft_rev": 3
+  },
   "review": {
     "id": 41,
     "repo": "acme/portal",

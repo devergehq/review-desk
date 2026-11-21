@@ -17,6 +17,12 @@ pub enum Code {
     InvalidValue,
     NotFound,
     Conflict,
+    /// The developer acted on a draft or a brief that has changed since it was shown to
+    /// them. A `409` like `conflict`, and a code of its own because the page answers it
+    /// differently: it reads the record again and shows the change — DEV-1346.
+    ChangedSinceShown,
+    /// A developer act without the developer's cookie — DEV-1346. See [`crate::developer`].
+    NotTheDeveloper,
     GithubUnavailable,
     StoreUnavailable,
 }
@@ -29,6 +35,8 @@ impl Code {
             Code::InvalidValue => "invalid_value",
             Code::NotFound => "not_found",
             Code::Conflict => "conflict",
+            Code::ChangedSinceShown => "changed_since_shown",
+            Code::NotTheDeveloper => "not_the_developer",
             Code::GithubUnavailable => "github_unavailable",
             Code::StoreUnavailable => "store_unavailable",
         }
@@ -42,8 +50,9 @@ impl Code {
     pub fn status(self) -> u16 {
         match self {
             Code::BadRequest | Code::InvalidValue => 400,
+            Code::NotTheDeveloper => 401,
             Code::NotFound => 404,
-            Code::Conflict => 409,
+            Code::Conflict | Code::ChangedSinceShown => 409,
             Code::StoreUnavailable => 500,
             Code::GithubUnavailable => 502,
         }
@@ -99,6 +108,11 @@ impl ApiError {
     /// The record is not in a state the request can be performed against.
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::new(Code::Conflict, message)
+    }
+
+    /// A developer act, made without the developer's cookie.
+    pub fn not_the_developer(message: impl Into<String>) -> Self {
+        Self::new(Code::NotTheDeveloper, message)
     }
 
     /// A read of GitHub that Review Desk needed could not be made. The developer's
@@ -163,6 +177,7 @@ impl From<StoreError> for ApiError {
             | StoreError::SupersededRound { .. }
             | StoreError::NotDismissed { .. }
             | StoreError::ReviewStarted { .. } => ApiError::conflict(message),
+            StoreError::ShownMoved { .. } => ApiError::new(Code::ChangedSinceShown, message),
             StoreError::InvalidValue {
                 field, expected, ..
             } => ApiError::invalid_value(*field, message, expected.clone()),

@@ -255,7 +255,12 @@ fn every_round_of_a_merged_pull_request_is_finished_whatever_was_harvested() {
     // round whose draft was never signed off.
     let mut rounds: Vec<Review> = vec![waiting_round(&store, 9568, "c100000", 1)];
     store
-        .approve_draft(rounds[0].id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            rounds[0].id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, rounds[0].id),
+        )
         .expect("approve round 1's draft");
     store
         .post_draft(rounds[0].id, "PRR_round_one")
@@ -303,7 +308,12 @@ fn step_seven_of_a_finished_posted_review_is_done_and_says_how_it_ended() {
     let (_dir, store) = temp_store();
     let review = waiting_round(&store, 9569, "aaa1111", 1);
     store
-        .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            review.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, review.id),
+        )
         .expect("approve the draft");
     store.post_draft(review.id, "PRR_one").expect("post it");
 
@@ -592,7 +602,12 @@ fn a_posted_round_is_not_superseded_by_a_newer_one() {
     let (_dir, store) = temp_store();
     let one = waiting_round(&store, 9596, "aaa1111", 1);
     store
-        .approve_draft(one.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            one.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, one.id),
+        )
         .expect("approve it");
     store.post_draft(one.id, "PRR_one").expect("post it");
 
@@ -650,7 +665,12 @@ fn a_posted_round_whose_author_replied_still_reaches_the_developer() {
     let (_dir, store) = temp_store();
     let one = waiting_round(&store, 9585, "aaa1111", 1);
     store
-        .approve_draft(one.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            one.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, one.id),
+        )
         .expect("approve it");
     store.post_draft(one.id, "PRR_one").expect("post it");
     store
@@ -699,19 +719,32 @@ fn the_four_acts_that_need_an_agent_are_refused_on_a_finished_review() {
         (
             "confirming the brief",
             store
-                .confirm_brief(review.id, Actor::Developer)
+                .confirm_brief(
+                    review.id,
+                    Actor::Developer,
+                    &common::brief_shown(&store, review.id),
+                )
                 .expect_err("refused"),
         ),
         (
             "approving the draft",
             store
-                .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+                .approve_draft(
+                    review.id,
+                    ReviewEvent::Comment,
+                    Actor::Developer,
+                    &common::shown(&store, review.id),
+                )
                 .expect_err("refused"),
         ),
         (
             "sending the draft back",
             store
-                .send_back_draft(review.id, "raise the retry finding")
+                .send_back_draft(
+                    review.id,
+                    "raise the retry finding",
+                    &common::shown(&store, review.id),
+                )
                 .expect_err("refused"),
         ),
         (
@@ -745,7 +778,12 @@ fn approving_a_superseded_rounds_draft_is_refused_naming_the_round_that_can_post
     waiting_round(&store, 9542, "bbb2222", 2);
 
     let error = store
-        .approve_draft(one.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            one.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, one.id),
+        )
         .expect_err("a superseded round cannot be the review that posts");
 
     assert!(error.is_refusal());

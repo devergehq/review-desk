@@ -161,10 +161,10 @@ describe('where it sends things', () => {
     expect(headers['content-type']).toBe('application/json')
   })
 
-  it('sends no credentials, because there is nothing to authenticate with', async () => {
+  it('sends the cookie to its own origin and to no other, because signing off needs it', async () => {
     answering(200, {})
     await api.getInbox()
-    expect(calls[0]!.init.credentials).toBe('omit')
+    expect(calls[0]!.init.credentials).toBe('same-origin')
   })
 
   it('unwraps the repository list, which the contract serves as an object', async () => {
@@ -177,7 +177,7 @@ describe('where it sends things', () => {
 
 describe('every error code in the contract', () => {
   /*
-   * The six the contract declares, each with the HTTP status the server serves it as and
+   * The eight the contract declares, each with the HTTP status the server serves it as and
    * the situation it means. A code that stopped being reachable, or gained a seventh
    * sibling, fails this table rather than going unnoticed.
    */
@@ -186,6 +186,8 @@ describe('every error code in the contract', () => {
     ['invalid_value', 400, '"nonsense" is not a commit hash'],
     ['not_found', 404, 'no review with id 99'],
     ['conflict', 409, 'this draft is approved and cannot be edited'],
+    ['changed_since_shown', 409, 'the draft of review 7 changed while you were reading it'],
+    ['not_the_developer', 401, 'only the developer can do this, from the dashboard'],
     ['github_unavailable', 502, 'gh is not installed'],
     ['store_unavailable', 500, 'the database could not be opened'],
   ]

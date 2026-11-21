@@ -498,6 +498,9 @@ pub fn brief(brief: &Brief) -> Value {
         "approach_verdict": brief.approach_verdict,
         "provenance": brief.provenance,
         "confirmed": brief.is_confirmed(),
+        // **What `confirmBrief` sends back** — DEV-1346. The hash of this brief, without
+        // its confirmation, so a confirmation is of the brief the page drew.
+        "sha256": review_desk_store::brief_hash(brief),
         "confirmed_at": rfc3339_or_null(brief.confirmed_at),
         // Two fields rather than one, because "the developer has not confirmed it" and
         // "nobody has to" are different states and the screen renders them differently.
@@ -931,6 +934,16 @@ pub fn draft_lint(lint: &DraftLint) -> Value {
 }
 
 /// The contract's `Draft`.
+/// `ShownDraft`: what a developer reading the draft is shown, which the sign-off endpoints
+/// take back — DEV-1346.
+pub fn draft_shown(shown: &review_desk_store::DraftShown) -> Value {
+    json!({
+        "body_sha256": shown.body_sha256,
+        "threads_sha256": shown.threads_sha256,
+        "draft_rev": shown.draft_rev,
+    })
+}
+
 pub fn draft(draft: &Draft) -> Value {
     json!({
         "review_id": draft.review_id,

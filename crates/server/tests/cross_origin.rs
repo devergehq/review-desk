@@ -407,14 +407,23 @@ fn a_caller_that_is_not_a_browser_still_works() {
     // cross-origin request, including a form submission. Refusing the absent case would
     // break every non-browser caller and stop no attacker; the content-type check is what
     // covers the form.
+    //
+    // **The guard lets it through; signing off is a second question.** Since DEV-1346 a
+    // confirmation also needs the developer's cookie and the brief's hash, so this one
+    // carries both: what this test holds is that an absent `Origin` is not what refuses
+    // it. `developer.rs` is where the same request without the cookie is a `401`.
+    let cookie = format!("rd_developer={}", harness.cookie);
+    let body = serde_json::json!({ "shown_brief_sha256": harness.brief_shown(seeded.review_id) })
+        .to_string();
     let answer = harness.raw(
         "POST",
         &format!("/api/v1/reviews/{}/brief/confirm", seeded.review_id),
         &[
             ("Host", host.as_str()),
             ("Content-Type", "application/json"),
+            ("Cookie", cookie.as_str()),
         ],
-        None,
+        Some(&body),
     );
 
     assert_eq!(answer.status, 200, "{}", answer.text());
@@ -520,7 +529,11 @@ fn the_dashboards_own_origin_is_accepted() {
     let host = base.trim_start_matches("http://").to_string();
 
     // The checks are worthless if they also block the dashboard, which is the only client
-    // this API has. A page served from this binary sends exactly these.
+    // this API has. A page served from this binary sends exactly these — and, since
+    // DEV-1346, the developer's cookie and the hash of the brief it drew.
+    let cookie = format!("rd_developer={}", harness.cookie);
+    let body = serde_json::json!({ "shown_brief_sha256": harness.brief_shown(seeded.review_id) })
+        .to_string();
     let answer = harness.raw(
         "POST",
         &format!("/api/v1/reviews/{}/brief/confirm", seeded.review_id),
@@ -528,8 +541,9 @@ fn the_dashboards_own_origin_is_accepted() {
             ("Host", host.as_str()),
             ("Origin", base.as_str()),
             ("Content-Type", "application/json"),
+            ("Cookie", cookie.as_str()),
         ],
-        None,
+        Some(&body),
     );
 
     assert_eq!(answer.status, 200, "{}", answer.text());
@@ -651,7 +665,11 @@ fn the_named_hostnames_own_origin_can_write() {
     let seeded = common::seed(&harness.store);
 
     // What the dashboard really sends when it is served through the proxy. If this is
-    // refused then the name is useless: browsing works and signing off does not.
+    // refused then the name is useless: browsing works and signing off does not. The
+    // cookie and the brief's hash are DEV-1346's, and the page sends both.
+    let cookie = format!("rd_developer={}", harness.cookie);
+    let body = serde_json::json!({ "shown_brief_sha256": harness.brief_shown(seeded.review_id) })
+        .to_string();
     let answer = harness.raw(
         "POST",
         &format!("/api/v1/reviews/{}/brief/confirm", seeded.review_id),
@@ -659,8 +677,9 @@ fn the_named_hostnames_own_origin_can_write() {
             ("Host", PROXIED),
             ("Origin", "https://app.review-desk.local"),
             ("Content-Type", "application/json"),
+            ("Cookie", cookie.as_str()),
         ],
-        None,
+        Some(&body),
     );
 
     assert_eq!(answer.status, 200, "{}", answer.text());

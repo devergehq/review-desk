@@ -281,12 +281,17 @@ impl Store {
     /// Layer 2 is written on a repeat confirmation too, which is deliberate: a brief
     /// confirmed before this behaviour existed has a trail that still says it is waiting,
     /// and confirming again is the only call that can put it right.
-    pub fn confirm_brief(&self, review_id: i64, by: Actor) -> Result<Brief> {
+    ///
+    /// **`shown` is the hash of the brief the developer read** — DEV-1346, from
+    /// [`Store::brief_sha256`]. A brief rewritten since is refused with
+    /// [`StoreError::ShownMoved`] and nothing is written.
+    pub fn confirm_brief(&self, review_id: i64, by: Actor, shown: &str) -> Result<Brief> {
         only_the_developer(by, "confirm a brief")?;
 
         self.refuse_if_dismissed(review_id, "confirming its brief")?;
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let brief = self.get_brief(review_id)?;
+        self.refuse_unless_brief_shown(review_id, shown)?;
 
         if !brief.is_confirmed() {
             self.conn.execute(

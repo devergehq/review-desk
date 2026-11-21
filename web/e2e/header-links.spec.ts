@@ -2,7 +2,7 @@ import { join } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { cli, scratch, serve, stop, type Serving } from './harness'
+import { cli, scratch, serve, stop, type Serving, signedIn } from './harness'
 
 /*
  * **The header's two links, measured at 1440 and 390 with a long repository name.**
@@ -80,6 +80,11 @@ test.beforeAll(async () => {
   if (!Number.isInteger(reviewId)) throw new Error(`review open printed no id: ${opened}`)
 
   serving = await serve(database)
+})
+
+/* This spec's own server, so its own cookie: the config's is the seeded server's — DEV-1346. */
+test.beforeEach(async ({ context }) => {
+  await signedIn(context, serving)
 })
 
 test.afterAll(async () => {

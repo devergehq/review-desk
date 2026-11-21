@@ -14,7 +14,9 @@
 
 import { writeFileSync } from 'node:fs'
 
-import { ADDRESSES, fresh, scratch, seed, serve, stop, type Addresses, type Serving } from './harness'
+import {
+  ADDRESSES, SIGNED_IN, fresh, scratch, seed, serve, stop, storageState, type Addresses, type Serving,
+} from './harness'
 
 export default async function globalSetup() {
   const directory = scratch()
@@ -53,6 +55,8 @@ export default async function globalSetup() {
     movedHeadReviewId,
   }
   writeFileSync(ADDRESSES, JSON.stringify(addresses, null, 2))
+  /* Every test's browser signs off as the developer on the seeded server — DEV-1346. */
+  writeFileSync(SIGNED_IN, storageState(seeded))
 
   const running: Serving[] = [seeded!, empty!]
   return async () => {

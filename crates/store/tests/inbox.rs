@@ -46,7 +46,11 @@ fn briefs_waiting_to_be_confirmed_are_found_across_every_repository() {
     brief(&store, billing.id);
     brief(&store, confirmed.id);
     store
-        .confirm_brief(confirmed.id, Actor::Developer)
+        .confirm_brief(
+            confirmed.id,
+            Actor::Developer,
+            &common::brief_shown(&store, confirmed.id),
+        )
         .expect("confirm");
 
     let waiting = store.reviews_with_unconfirmed_brief(None).unwrap();
@@ -83,7 +87,12 @@ fn drafts_are_found_by_the_status_they_are_waiting_at() {
         .put_draft(approved.id, NewDraft::ready("approved"))
         .unwrap();
     store
-        .approve_draft(approved.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            approved.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, approved.id),
+        )
         .unwrap();
     store
         .put_draft(
@@ -483,7 +492,12 @@ fn post(store: &Store, review: i64, event: ReviewEvent, github_review: &str) {
         .put_draft(review, NewDraft::ready("a body worth posting"))
         .expect("put draft");
     store
-        .approve_draft(review, event, Actor::Developer)
+        .approve_draft(
+            review,
+            event,
+            Actor::Developer,
+            &common::shown(store, review),
+        )
         .expect("approve");
     store
         .post_draft(review, github_review)

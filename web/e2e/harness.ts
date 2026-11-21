@@ -10,6 +10,7 @@
  */
 
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import type { Page } from '@playwright/test'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -92,6 +93,38 @@ export const BINARY = resolve(
 
 /** Where the two servers' addresses are left for the specs to read. */
 export const ADDRESSES = resolve('e2e/.addresses.json')
+
+/**
+ * The seeded server's cookie, as Playwright's `storageState`, so every test's browser is the
+ * developer's on that server without signing in itself — DEV-1346. Written by global setup.
+ */
+export const SIGNED_IN = resolve('e2e/.signed-in.json')
+
+/** Put a server's developer cookie into a browser, as signing in through the link would. */
+export async function signedIn(
+  context: { addCookies: (cookies: Array<{ name: string, value: string, url: string }>) => Promise<void> },
+  serving: { url: string, cookie: string },
+): Promise<void> {
+  await context.addCookies([{ name: 'rd_developer', value: serving.cookie, url: serving.url }])
+}
+
+/** `storageState` holding one server's cookie. Cookies ignore the port: one server at a time. */
+export function storageState(serving: { url: string, cookie: string }): string {
+  const { hostname } = new URL(serving.url)
+  return JSON.stringify({
+    cookies: [{
+      name: 'rd_developer',
+      value: serving.cookie,
+      domain: hostname,
+      path: '/',
+      expires: -1,
+      httpOnly: true,
+      secure: false,
+      sameSite: 'Strict',
+    }],
+    origins: [],
+  })
+}
 
 /**
  * What `global-setup.ts` leaves for the specs.
@@ -212,6 +245,11 @@ export function readAddresses(): Addresses {
 export interface Serving {
   url: string
   database: string
+  /**
+   * The developer cookie this server handed out, signed in for once at start — DEV-1346.
+   * A test that signs anything off puts it in its browser with {@link signedIn}.
+   */
+  cookie: string
   process: ChildProcess
   /** Everything it has printed, so a death has its last words rather than none. */
   said: () => string
@@ -248,13 +286,13 @@ export function scratch(): string {
  * because there is no command for either. That is the boundary this test exists to exercise.
  */
 /**
- * The invented brief, with the nine fields the server derives taken back off it.
+ * The invented brief, with the ten fields the server derives taken back off it.
  *
  * `contract/examples/confirmBrief.response.real-length.json` is a **response**, and
  * `NewBrief` and every one of its sub-structures is `serde(deny_unknown_fields)` — so
  * feeding the example to `brief put` as it stands is refused, naming the first extra field
- * and nothing about the other eight. What is removed is exactly what the server works out
- * for itself: the review it belongs to, whether it is confirmed and when, the blind pass's
+ * and nothing about the other nine. What is removed is exactly what the server works out
+ * for itself: the review it belongs to, its hash, whether it is confirmed and when, the blind pass's
  * derived state, when it was last written, a part's line totals (summed from its files so
  * the card cannot disagree with the list) and the `F`-prefixed keys (built from a sequence
  * number, because the dashboard builds no ids).
@@ -272,6 +310,8 @@ function structuredBrief(): Record<string, unknown> {
     confirmed_at: _confirmedAt,
     blind_pass_state: _blindPassState,
     updated_at: _updatedAt,
+    /* The brief's hash, which a confirmation sends back — DEV-1346. */
+    sha256: _sha256,
     ...written
   } = served
 
@@ -1617,8 +1657,14 @@ export async function serve(database: string): Promise<Serving> {
    * Allele says about the seeded ids, and in CI they would draw none. A path that is never
    * there makes both draw the same thing.
    */
+  /*
+   * **The sign-in token, chosen here, which only an `e2e` build will take** — DEV-1346. A
+   * shipped binary makes its own and prints it only to a terminal, which this is not; the
+   * e2e build reads `REVIEW_DESK_E2E_TOKEN` instead, and cannot be built in release.
+   */
+  const token = randomBytes(32).toString('hex')
   const child = spawn(BINARY, ['serve', '--port', '0', '--json', '--allele-socket', NO_ALLELE], {
-    env: { ...process.env, REVIEW_DESK_DB: database },
+    env: { ...process.env, REVIEW_DESK_DB: database, REVIEW_DESK_E2E_TOKEN: token },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
@@ -1690,7 +1736,7 @@ export async function serve(database: string): Promise<Serving> {
     if (died) throw new Error(died)
     try {
       const answer = await fetch(`${url}api/v1/health`)
-      if (answer.ok) return { url, database, process: child, said }
+      if (answer.ok) return { url, database, cookie: await signIn(url, token), process: child, said }
     }
     catch {
       /* Not up yet. */
@@ -2033,4 +2079,26 @@ export async function pinClockAt(
     throw new Error('the record holds no stamp to pin the clock to')
   }
   await page.clock.pauseAt(new Date((stamp + secondsAfter) * 1000))
+}
+
+/**
+ * Trade a server's token for its developer cookie, as the page does with the link's fragment.
+ *
+ * Fails loudly: a binary that refuses its own token was built without the `e2e` feature, and
+ * every sign-off in the suite would then fail for a reason nowhere near the test.
+ */
+async function signIn(url: string, token: string): Promise<string> {
+  const answer = await fetch(`${url}api/v1/developer/sign-in`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token }),
+  })
+  const cookie = /rd_developer=([0-9a-f]+)/.exec(answer.headers.get('set-cookie') ?? '')?.[1]
+  if (!answer.ok || !cookie) {
+    throw new Error(
+      `${url} refused the sign-in token (${answer.status}): is the binary built with `
+      + '`--features review-desk/e2e`? `pnpm run e2e:build` builds it so.',
+    )
+  }
+  return cookie
 }

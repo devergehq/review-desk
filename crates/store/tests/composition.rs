@@ -1524,7 +1524,12 @@ fn a_decision_about_an_approved_draft_is_refused() {
     let (_dir, store) = temp_store();
     let review = seeded(&store);
     store
-        .approve_draft(review, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            review,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .expect("the developer signs off");
 
     let refused = store
@@ -1555,7 +1560,12 @@ fn ticketing_what_is_left_holds_the_open_findings_back_and_approves_in_one_step(
     let review = seeded(&store);
 
     let settled = store
-        .ticket_rest_and_approve(review, Some("filed as one ticket"), Actor::Developer)
+        .ticket_rest_and_approve(
+            review,
+            Some("filed as one ticket"),
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .expect("ticket what is left, and approve");
 
     assert_eq!(settled.ticketed, vec![1, 2, 3]);
@@ -1617,7 +1627,12 @@ fn ticketing_what_is_left_finishes_layer_six() {
     let review = seeded(&store);
 
     store
-        .ticket_rest_and_approve(review, None, Actor::Developer)
+        .ticket_rest_and_approve(
+            review,
+            None,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .expect("ticket what is left, and approve");
 
     let layer = store
@@ -1648,7 +1663,12 @@ fn ticketing_what_is_left_is_refused_when_nothing_is_open() {
     }
 
     let refused = store
-        .ticket_rest_and_approve(review, None, Actor::Developer)
+        .ticket_rest_and_approve(
+            review,
+            None,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .expect_err("nothing left to ticket");
     assert_eq!(refused.code(), "invalid_value");
     assert_eq!(
@@ -1664,7 +1684,12 @@ fn only_the_developer_tickets_what_is_left() {
     let review = seeded(&store);
 
     let refused = store
-        .ticket_rest_and_approve(review, None, Actor::Harvester)
+        .ticket_rest_and_approve(
+            review,
+            None,
+            Actor::Harvester,
+            &common::shown(&store, review),
+        )
         .expect_err("a sign-off by anybody else");
     assert_eq!(refused.code(), "invalid_value");
     assert_eq!(
@@ -1679,7 +1704,12 @@ fn the_ticket_the_developer_asked_for_is_work_an_agent_can_see() {
     let review = seeded(&store);
 
     store
-        .ticket_rest_and_approve(review, None, Actor::Developer)
+        .ticket_rest_and_approve(
+            review,
+            None,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .expect("ticket what is left, and approve");
 
     // The draft is the more advanced thing outstanding, so the item is the approval — and

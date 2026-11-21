@@ -15,12 +15,14 @@
 //!
 //! ## It binds `127.0.0.1` and there is no flag to change that
 //!
-//! There is no authentication in this version: being able to reach the port is the
-//! authorisation, which `contract/README.md` states and justifies. **That is sound only
+//! Being able to reach the port is the authorisation for reading and for every write but
+//! six, which need the developer's cookie too — `crate::developer`, DEV-1346 — as
+//! `contract/README.md` states. **That is sound only
 //! while the bind holds** — on `0.0.0.0`, or through a tunnel, the whole record becomes
 //! readable and writable by anyone who can reach it. So the address is a constant, not an
-//! option: a flag that could widen it is one typo away from publishing the record, and
-//! the version that adds authentication is the version that may add the flag.
+//! option: a flag that could widen it is one typo away from publishing the record. The
+//! developer's cookie guards six acts and nothing else, so it is not the authentication
+//! that would make a wider bind safe.
 //!
 //! ## Why `axum`, and why it is not `tiny_http` any more
 //!
@@ -61,6 +63,7 @@
 pub mod allele;
 pub mod api;
 pub mod assets;
+pub mod developer;
 pub mod error;
 pub mod github;
 pub mod guard;
@@ -83,7 +86,8 @@ use tokio::runtime::Builder;
 use tokio::sync::Notify;
 
 pub use crate::allele::Allele;
-pub use crate::api::{Api, API_PREFIX};
+pub use crate::api::{Answered, Api, API_PREFIX};
+pub use crate::developer::Developer;
 pub use crate::error::{ApiError, Code};
 pub use crate::github::Github;
 pub use crate::hostname::{Hostname, HostnameError};
@@ -105,6 +109,9 @@ pub enum BindError {
     /// The port was refused — most often because something else already has it.
     #[error("cannot listen on 127.0.0.1:{port}: {detail}")]
     Listen { port: u16, detail: String },
+    /// No sign-in token could be made, because the operating system gave no randomness.
+    #[error("cannot make a sign-in token: {detail}")]
+    NoToken { detail: String },
 }
 
 /// The store, the address it is answering on, and any name it also answers to, as every
@@ -131,6 +138,7 @@ pub struct Server {
     address: SocketAddr,
     api: Api,
     proxied: Option<Hostname>,
+    developer: Developer,
 }
 
 impl Server {
@@ -150,13 +158,41 @@ impl Server {
 
         let address = listener.local_addr().unwrap_or(wanted);
 
+        // **Made here, so every server has one and none is handed one by its caller** —
+        // except the end-to-end test's, which `developer::e2e_token` reads from the
+        // environment only in a debug build made for it.
+        let token = match developer::e2e_token() {
+            Some(token) => token,
+            None => developer::new_secret().map_err(|detail| BindError::NoToken {
+                detail: detail.to_string(),
+            })?,
+        };
+        let developer = Developer::signing_in_with(token);
+
         Ok(Server {
             listener,
             address,
-            api: Api::new(records, github),
+            api: Api::new(records, github, developer.clone()),
             // Answering to a name is asked for, never assumed.
             proxied: None,
+            developer,
         })
+    }
+
+    /// The sign-in link: the dashboard's URL with the one-time token as its fragment.
+    ///
+    /// **For `review-desk serve` to print to a terminal and for nothing else.** It is the
+    /// developer's way in, so it goes in no API response, no other command's output and no
+    /// log — see [`crate::developer`]. `None` once the token is spent.
+    pub fn sign_in_url(&self) -> Option<String> {
+        self.developer
+            .token()
+            .map(|token| format!("{}#sign-in={token}", self.url()))
+    }
+
+    /// The one-time token itself, for a test to trade the way the page does.
+    pub fn sign_in_token(&self) -> Option<String> {
+        self.developer.token()
     }
 
     /// Also answer to one name a reverse proxy in front of this server forwards.
@@ -370,11 +406,24 @@ async fn answer(State(desk): State<Desk>, request: Request) -> Response {
         // mutex and talks to SQLite, so running it here would stall every other
         // connection this thread is serving.
         let api = desk.api.clone();
-        let answered =
-            tokio::task::spawn_blocking(move || api.answer(&method, &rest, &query, &body)).await;
+        let cookie = developer::cookie_from(&headers);
+        let answered = tokio::task::spawn_blocking(move || {
+            api.answer(&method, &rest, &query, &body, cookie.as_deref())
+        })
+        .await;
 
         match answered {
-            Ok((status, document)) => json_response(status, &document),
+            Ok(Answered {
+                status,
+                document,
+                set_cookie,
+            }) => {
+                let mut response = json_response(status, &document);
+                if let Some(value) = set_cookie.and_then(|v| HeaderValue::from_str(&v).ok()) {
+                    response.headers_mut().insert(header::SET_COOKIE, value);
+                }
+                response
+            }
             // The blocking task panicked, which `Records` already turns into a refusal for
             // a poisoned lock. Reaching here means something else did, and the one honest
             // thing to say is that the request was not answered.

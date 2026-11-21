@@ -72,6 +72,7 @@ import type {
   Review,
   ReviewDetail,
   ReviewEvent,
+  ShownDraft,
   ReviewList,
   ReviewSession,
   MessageList,
@@ -267,6 +268,32 @@ async function write<T>(
 
   if (refresh) await refreshEverything()
   return { ok: true, message: said(made) }
+}
+
+/**
+ * A sign-off: a write held to what the page showed — DEV-1346.
+ *
+ * **A `changed_since_shown` refusal reads the record again and says so in the page's own
+ * words.** The server wrote nothing; what the developer was looking at is no longer what
+ * the record holds, so the screen is read again — which shows them the change — and the
+ * notice says why their click did nothing. Their next click is on what they now see.
+ */
+async function signOff<T>(
+  subject: 'draft' | 'brief',
+  act: (to: DeskBackend) => Promise<T>,
+  said: (made: T) => string,
+): Promise<WriteResult> {
+  const result = await write(act, said)
+  if (result.ok || result.error.code !== 'changed_since_shown') return result
+
+  await refreshEverything()
+  return {
+    ok: false,
+    error: {
+      ...result.error,
+      message: `The ${subject} changed while you were reading it · review the change.`,
+    },
+  }
 }
 
 /**
@@ -584,9 +611,10 @@ export function useReviewDesk() {
   }
 
   /** `POST /reviews/{id}/brief/confirm` — layer 2, and the gate on everything after it. */
-  async function confirmBrief(id: number): Promise<WriteResult> {
-    return write(
-      to => to.confirmBrief(id),
+  async function confirmBrief(id: number, shownBriefSha256: string): Promise<WriteResult> {
+    return signOff(
+      'brief',
+      to => to.confirmBrief(id, shownBriefSha256),
       (brief: Brief) =>
         brief.confirmed
           ? 'Problem confirmed. The draft is yours to sign off.'
@@ -646,10 +674,15 @@ export function useReviewDesk() {
    * A sign-off. It neither posts nor files anything: the findings are recorded as ticketed,
    * the one ticket is asked for, and the review session does the rest.
    */
-  async function ticketRestAndApprove(id: number, note: string): Promise<WriteResult> {
+  async function ticketRestAndApprove(
+    id: number,
+    note: string,
+    shown: ShownDraft,
+  ): Promise<WriteResult> {
     const said = note.trim()
-    return write(
-      to => to.ticketRestAndApprove(id, said.length === 0 ? null : said),
+    return signOff(
+      'draft',
+      to => to.ticketRestAndApprove(id, said.length === 0 ? null : said, shown),
       (made: TicketedAndApproved) =>
         `Signed off. ${count(made.ticketed.length, 'finding')} `
         + `(${made.ticketed_keys.join(', ')}) `
@@ -690,17 +723,27 @@ export function useReviewDesk() {
   }
 
   /** `POST /reviews/{id}/draft/approve` — approved here, posted by the review session. */
-  async function approveDraft(id: number, event: ReviewEvent): Promise<WriteResult> {
-    return write(
-      to => to.approveDraft(id, event),
+  async function approveDraft(
+    id: number,
+    event: ReviewEvent,
+    shown: ShownDraft,
+  ): Promise<WriteResult> {
+    return signOff(
+      'draft',
+      to => to.approveDraft(id, event, shown),
       () => 'Signed off. The review session posts it; Review Desk does not.',
     )
   }
 
   /** `POST /reviews/{id}/draft/send-back` — refused without a note, as the API refuses it. */
-  async function sendBackDraft(id: number, note: string): Promise<WriteResult> {
-    return write(
-      to => to.sendBackDraft(id, note),
+  async function sendBackDraft(
+    id: number,
+    note: string,
+    shown: ShownDraft,
+  ): Promise<WriteResult> {
+    return signOff(
+      'draft',
+      to => to.sendBackDraft(id, note, shown),
       () => 'Sent back. The session has the note.',
     )
   }

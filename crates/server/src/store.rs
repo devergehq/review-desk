@@ -14,7 +14,7 @@
 use std::sync::{Arc, Mutex};
 
 use review_desk_store::{
-    Actor, Brief, Decision, DecisionMade, DiffAtHead, Disposition, Draft, DraftSection,
+    Actor, Brief, Decision, DecisionMade, DiffAtHead, Disposition, Draft, DraftSection, DraftShown,
     DraftThread, DuplicateRounds, Finding, FindingInRound, FoldedRound, FreshSessionRequest,
     FullReview, HeadUpdates, NewDraft, NewOutcome, NitTicket, NotForSigning, OpenedReview, Outcome,
     PostedReview, ProblemStatement, RepoSummary, Review, ReviewAtLayer, ReviewAtStep, ReviewEvent,
@@ -346,8 +346,11 @@ impl Records {
 
     /// Confirm the brief. The developer's act at layer 2, and a sign-off: see
     /// [`SIGN_OFF_ACTOR`].
-    pub fn confirm_brief(&self, review_id: i64) -> Result<Brief, ApiError> {
-        self.with(|store| store.confirm_brief(review_id, SIGN_OFF_ACTOR))
+    ///
+    /// `shown` is the brief's hash as the page was served it; a brief that has changed
+    /// since is refused and nothing is written.
+    pub fn confirm_brief(&self, review_id: i64, shown: &str) -> Result<Brief, ApiError> {
+        self.with(|store| store.confirm_brief(review_id, SIGN_OFF_ACTOR, shown))
     }
 
     /// The problem half of a review's brief.
@@ -488,9 +491,22 @@ impl Records {
 
     /// Approve the draft and record the event it is to be posted as. A sign-off: see
     /// [`SIGN_OFF_ACTOR`]. **This does not post.**
-    pub fn approve_draft(&self, review_id: i64, event: ReviewEvent) -> Result<Draft, ApiError> {
-        self.with(|store| store.approve_draft(review_id, event, SIGN_OFF_ACTOR))
+    ///
+    /// `shown` is what the page showed; a draft that has moved since is refused and
+    /// nothing is written. See [`DraftShown`].
+    pub fn approve_draft(
+        &self,
+        review_id: i64,
+        event: ReviewEvent,
+        shown: &DraftShown,
+    ) -> Result<Draft, ApiError> {
+        self.with(|store| store.approve_draft(review_id, event, SIGN_OFF_ACTOR, shown))
     }
+
+    // **No `draft_shown` here, on purpose.** A page's `shown` is hashed from the draft and
+    // threads it serves — `review_desk_store::shown_of` in `Api::draft_detail` — and a method
+    // that read it again would be the way back to the bug DEV-1346's self-review found: body
+    // A served beside B's `shown`. Removed so that reintroducing it is a decision, not a call.
 
     /// Send the draft back to the session with a note, and keep the note in the review's
     /// conversation.
@@ -498,9 +514,14 @@ impl Records {
     /// **The send-back first, so a refused one leaves no message saying it happened.** The
     /// note is the same words either way; the message is what puts them beside the
     /// questions and answers on the page. DEV-1141: send-back is one kind of message.
-    pub fn send_back_draft(&self, review_id: i64, note: &str) -> Result<Draft, ApiError> {
+    pub fn send_back_draft(
+        &self,
+        review_id: i64,
+        note: &str,
+        shown: &DraftShown,
+    ) -> Result<Draft, ApiError> {
         self.with(|store| {
-            let draft = store.send_back_draft(review_id, note)?;
+            let draft = store.send_back_draft(review_id, note, shown)?;
             store.record_send_back_message(review_id, note)?;
             Ok(draft)
         })
@@ -568,8 +589,9 @@ impl Records {
         &self,
         review_id: i64,
         note: Option<&str>,
+        shown: &DraftShown,
     ) -> Result<TicketedAndApproved, ApiError> {
-        self.with(|store| store.ticket_rest_and_approve(review_id, note, SIGN_OFF_ACTOR))
+        self.with(|store| store.ticket_rest_and_approve(review_id, note, SIGN_OFF_ACTOR, shown))
     }
 
     // -- rules --------------------------------------------------------------------

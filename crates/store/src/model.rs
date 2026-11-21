@@ -2166,6 +2166,48 @@ pub struct Draft {
     pub signoff_withdrawn_head: Option<String>,
     pub lint: DraftLint,
     pub updated_at: Timestamp,
+    /// How many times what posts has changed. Counted by the database — migration 24's
+    /// triggers — so no writer can forget to. See [`DraftShown`].
+    pub rev: i64,
+    /// What the developer approved: the draft as it stood when the sign-off was written.
+    ///
+    /// `Some` while the draft is approved or posted, **except on a sign-off given before
+    /// migration 24**, which recorded nothing it was of and reads `None`. SQLite has no
+    /// SHA-256 to backfill it with. Such a sign-off is of no recorded draft, so a post should
+    /// refuse it rather than guess. **From the page the way out is a send-back**: the API
+    /// approves only a `ready` draft, so the developer sends it back, the session writes it
+    /// ready again, and the developer approves what is then shown. (A repeat
+    /// [`crate::Store::approve_draft`] records it too, for a caller of the store.)
+    ///
+    /// **This is what a post is held to** (DEV-1347): a draft whose
+    /// [`crate::Store::draft_shown`] no longer equals this has changed since it was signed
+    /// off, whatever its status says.
+    pub approved_shown: Option<DraftShown>,
+}
+
+/// What the developer was shown of a draft, as the sign-off endpoints receive it back.
+///
+/// **An act on a draft is an act on these three values, not on whatever the draft is when
+/// the request lands** — DEV-1346. The page sends back the `shown` it was served with the
+/// draft it rendered, and the store refuses the act, writing nothing, when any of the three
+/// has moved since. Before this a session could rewrite the draft while the developer read
+/// it, and the click approved text they never saw.
+///
+/// Three values rather than one, because each catches a different move. `body_sha256` is
+/// the body as it posts. `threads_sha256` is the comments that post beside it, which are
+/// composed from the findings as well as the blocks and so can change without the body
+/// changing. `rev` is the compare-and-set, and it moves on any write of a block: a session's
+/// `put_draft` rewrites every block, so it moves `rev` even when the words come out the same,
+/// and the draft still counts as written under the developer. The body's own trigger counts
+/// only a body that changed — migration 24.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftShown {
+    /// SHA-256 of the body's UTF-8 bytes, lower-case hex.
+    pub body_sha256: String,
+    /// SHA-256 of the threads' JSON, lower-case hex. See [`crate::Store::draft_shown`].
+    pub threads_sha256: String,
+    /// The draft's revision. See [`Draft::rev`].
+    pub draft_rev: i64,
 }
 
 /// A draft to store, replacing any draft already held for the review.

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { cli, scratch, serve, stop, type Serving } from './harness'
+import { cli, scratch, serve, stop, type Serving, signedIn } from './harness'
 
 /*
  * **Step 7's page at real density, measured at 1440 and 390.**
@@ -256,6 +256,11 @@ test.beforeAll(async () => {
   }
 
   serving = await serve(database)
+})
+
+/* This spec's own server, so its own cookie: the config's is the seeded server's — DEV-1346. */
+test.beforeEach(async ({ context }) => {
+  await signedIn(context, serving)
 })
 
 test.afterAll(async () => {

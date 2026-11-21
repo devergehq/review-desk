@@ -150,7 +150,7 @@ fn the_sign_off_functions_are_still_there_to_be_called() {
         .success();
 
     let confirmed = store
-        .confirm_brief(id, Actor::Developer)
+        .confirm_brief(id, Actor::Developer, &common::brief_shown(&store, id))
         .expect("the dashboard confirms the brief through this function");
     assert!(confirmed.confirmed_at.is_some());
     assert_eq!(confirmed.confirmed_by, Some(Actor::Developer));
@@ -189,7 +189,7 @@ fn the_sign_off_functions_are_still_there_to_be_called() {
         )
         .expect("and keeps it again");
     let settled = store
-        .ticket_rest_and_approve(id, None, Actor::Developer)
+        .ticket_rest_and_approve(id, None, Actor::Developer, &common::shown(&store, id))
         .expect("the dashboard tickets what is left and approves through this function");
     assert_eq!(settled.draft.status, DraftStatus::Approved);
     assert_eq!(settled.draft.event, Some(ReviewEvent::Approve));
@@ -266,7 +266,7 @@ fn a_brief_with_every_row_on_it_is_still_the_developers_to_confirm() {
     );
 
     let confirmed = store
-        .confirm_brief(id, Actor::Developer)
+        .confirm_brief(id, Actor::Developer, &common::brief_shown(&store, id))
         .expect("the dashboard confirms it");
     assert_eq!(confirmed.confirmed_by, Some(Actor::Developer));
 }
@@ -530,7 +530,12 @@ fn a_draft_cannot_be_marked_posted_until_the_developer_has_approved_it() {
     // The developer approves, in the dashboard's place, and only then does the session
     // get to report what it posted.
     desk.store()
-        .approve_draft(id, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            id,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(&desk.store(), id),
+        )
         .expect("the developer approves");
 
     let shown = desk.json(&["draft", "show", "--review", &review]);
@@ -613,7 +618,12 @@ fn the_hand_over_is_refused_until_the_developer_has_signed_the_draft_off() {
 
     // The developer signs off, in the dashboard's place.
     desk.store()
-        .approve_draft(id, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            id,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(&desk.store(), id),
+        )
         .expect("the developer approves");
 
     let handed = desk.json(&["draft", "handover", "--review", &review]);

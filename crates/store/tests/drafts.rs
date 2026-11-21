@@ -176,7 +176,12 @@ fn an_approved_draft_cannot_be_rewritten() {
     let (_dir, store) = temp_store();
     let review = review_with_a_ready_draft(&store);
     store
-        .approve_draft(review, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            review,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .unwrap();
 
     match store.put_draft(review, NewDraft::ready("something else")) {
@@ -200,7 +205,12 @@ fn approving_requires_the_developer_and_records_them() {
     let review = review_with_a_ready_draft(&store);
 
     for by in [Actor::Author, Actor::Harvester] {
-        match store.approve_draft(review, ReviewEvent::Comment, by) {
+        match store.approve_draft(
+            review,
+            ReviewEvent::Comment,
+            by,
+            &common::shown(&store, review),
+        ) {
             Err(StoreError::InvalidValue {
                 field, expected, ..
             }) => {
@@ -212,7 +222,12 @@ fn approving_requires_the_developer_and_records_them() {
     }
 
     let approved = store
-        .approve_draft(review, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            review,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .expect("the developer approves");
     assert_eq!(approved.status, DraftStatus::Approved);
     assert_eq!(approved.event, Some(ReviewEvent::RequestChanges));
@@ -227,14 +242,29 @@ fn approving_twice_is_one_approval_and_changing_the_event_is_refused() {
     let review = review_with_a_ready_draft(&store);
 
     let first = store
-        .approve_draft(review, ReviewEvent::Approve, Actor::Developer)
+        .approve_draft(
+            review,
+            ReviewEvent::Approve,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .unwrap();
     let again = store
-        .approve_draft(review, ReviewEvent::Approve, Actor::Developer)
+        .approve_draft(
+            review,
+            ReviewEvent::Approve,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .expect("a retried call is safe");
     assert_eq!(first, again, "the first approval's time is kept");
 
-    match store.approve_draft(review, ReviewEvent::RequestChanges, Actor::Developer) {
+    match store.approve_draft(
+        review,
+        ReviewEvent::RequestChanges,
+        Actor::Developer,
+        &common::shown(&store, review),
+    ) {
         Err(StoreError::DraftStatus { found, .. }) => assert_eq!(found, DraftStatus::Approved),
         other => panic!("a different event would change what gets posted: {other:?}"),
     }
@@ -258,7 +288,12 @@ fn a_draft_can_only_be_approved_from_ready() {
         )
         .unwrap();
 
-    match store.approve_draft(review.id, ReviewEvent::Comment, Actor::Developer) {
+    match store.approve_draft(
+        review.id,
+        ReviewEvent::Comment,
+        Actor::Developer,
+        &common::shown(&store, review.id),
+    ) {
         Err(StoreError::DraftStatus { found, wanted, .. }) => {
             assert_eq!(found, DraftStatus::Drafting);
             assert!(wanted.contains("ready"), "{wanted}");
@@ -273,7 +308,11 @@ fn a_draft_is_sent_back_with_a_note_and_can_be_reworked() {
     let review = review_with_a_ready_draft(&store);
 
     let sent_back = store
-        .send_back_draft(review, "  F2 is the option map talking, not the diff.  ")
+        .send_back_draft(
+            review,
+            "  F2 is the option map talking, not the diff.  ",
+            &common::shown(&store, review),
+        )
         .expect("send back");
     assert_eq!(sent_back.status, DraftStatus::SentBack);
     assert_eq!(
@@ -301,7 +340,7 @@ fn sending_a_draft_back_with_no_note_is_refused() {
     let (_dir, store) = temp_store();
     let review = review_with_a_ready_draft(&store);
 
-    match store.send_back_draft(review, "   ") {
+    match store.send_back_draft(review, "   ", &common::shown(&store, review)) {
         Err(StoreError::InvalidValue { field, .. }) => assert_eq!(field, "sent_back_note"),
         other => panic!("expected a refusal, got {other:?}"),
     }
@@ -333,7 +372,12 @@ fn posting_records_the_github_review_and_the_time_together() {
     let (_dir, store) = temp_store();
     let review = review_with_a_ready_draft(&store);
     store
-        .approve_draft(review, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            review,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .unwrap();
 
     let posted = store
@@ -368,7 +412,12 @@ fn an_empty_github_review_id_is_refused() {
     let (_dir, store) = temp_store();
     let review = review_with_a_ready_draft(&store);
     store
-        .approve_draft(review, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            review,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, review),
+        )
         .unwrap();
 
     match store.post_draft(review, "  ") {

@@ -26,8 +26,8 @@ use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, Transact
 use crate::entities::{composition, only_the_developer};
 use crate::error::{Result, StoreError};
 use crate::model::{
-    Actor, Draft, DraftLint, DraftStatus, NewDraft, NewDraftSection, ReviewEvent, ReviewLayerName,
-    ReviewLayerState, Timestamp,
+    Actor, Draft, DraftLint, DraftShown, DraftStatus, NewDraft, NewDraftSection, ReviewEvent,
+    ReviewLayerName, ReviewLayerState, Timestamp,
 };
 use crate::{is_foreign_key_violation, Store};
 
@@ -60,7 +60,8 @@ const COLUMNS: &str = "review_id, body, status, event, approved_at, approved_by,
                        signoff_withdrawn_at, signoff_withdrawn_head, lint_passes, \
                        lint_visible_words, lint_word_budget, lint_findings_in_body, \
                        lint_findings_expected, lint_raised_before_on_pr, lint_errors, \
-                       lint_checked_at, updated_at";
+                       lint_checked_at, updated_at, rev, approved_body_sha256, \
+                       approved_threads_sha256, approved_rev";
 
 impl Store {
     /// Store the review's draft, replacing the body already held.
@@ -293,7 +294,17 @@ impl Store {
     /// and the store is the only way into the record, so this is the one place that can
     /// hold that line. Approving again with the same event changes nothing, so a
     /// retried call is safe; approving at any other status is refused.
-    pub fn approve_draft(&self, review_id: i64, event: ReviewEvent, by: Actor) -> Result<Draft> {
+    ///
+    /// **`shown` is what the developer was shown**, and the approval is of that — DEV-1346.
+    /// A draft that has moved since is refused with [`StoreError::ShownMoved`] and nothing
+    /// is written. See [`DraftShown`].
+    pub fn approve_draft(
+        &self,
+        review_id: i64,
+        event: ReviewEvent,
+        by: Actor,
+        shown: &DraftShown,
+    ) -> Result<Draft> {
         only_the_developer(by, "approve a draft")?;
         self.refuse_if_dismissed(review_id, "approving its draft")?;
 
@@ -306,6 +317,10 @@ impl Store {
         // is waiting, and approving again is the only call that can put it right. A
         // *different* event is not the same approval: it would change what gets posted,
         // and the first choice has already been reported as made.
+        //
+        // **A repeat approval is the store's, not the page's.** The API approves only a
+        // `ready` draft (`draft_must_be` in `crates/server/src/api.rs`), so nothing in the
+        // dashboard reaches this arm; a caller of the store does.
         let already_approved = match draft.status {
             DraftStatus::Ready => false,
             DraftStatus::Approved if draft.event == Some(event) => true,
@@ -318,8 +333,18 @@ impl Store {
             }
         };
 
-        if !already_approved {
-            write_approval(&self.conn, review_id, event, by, self.now())?;
+        // After the status, so a draft that cannot be approved at all says that rather than
+        // that it moved; before any write, so a draft that moved is a refusal that changed
+        // nothing. A repeat approval is held to it too, for any caller of the store that
+        // makes one: it is still an approval of what the caller says was shown.
+        self.refuse_unless_draft_shown(review_id, shown)?;
+
+        // **A repeat approval writes when the first recorded nothing it was of.** A draft
+        // approved before migration 24 has `approved_shown` empty, and this gives it a draft to
+        // be held to. Store callers only: the API approves only a `ready` draft, so from the
+        // page the way is send back, rewrite, approve — see `Draft::approved_shown`.
+        if !already_approved || draft.approved_shown.is_none() {
+            write_approval(&self.conn, review_id, event, by, self.now(), shown)?;
         }
 
         self.set_review_layer(
@@ -354,7 +379,10 @@ impl Store {
     ///
     /// **A posted draft is not sent back.** It is on GitHub; what follows a posted review
     /// is the next round, not an edit of the last one.
-    pub fn send_back_draft(&self, review_id: i64, note: &str) -> Result<Draft> {
+    ///
+    /// **Held to what was shown, as an approval is** — DEV-1346. A note written against a
+    /// draft the session has since rewritten is about a draft that no longer exists.
+    pub fn send_back_draft(&self, review_id: i64, note: &str, shown: &DraftShown) -> Result<Draft> {
         let note = note.trim();
         if note.is_empty() {
             return Err(StoreError::InvalidValue {
@@ -382,6 +410,8 @@ impl Store {
             }
         };
 
+        self.refuse_unless_draft_shown(review_id, shown)?;
+
         if !already_sent_back {
             let at = self.now();
             // **The sign-off is cleared with it.** A draft sent back is not approved, and a
@@ -397,7 +427,10 @@ impl Store {
                      updated_at     = ?4,
                      event          = NULL,
                      approved_at    = NULL,
-                     approved_by    = NULL
+                     approved_by    = NULL,
+                     approved_body_sha256    = NULL,
+                     approved_threads_sha256 = NULL,
+                     approved_rev            = NULL
                  WHERE review_id = ?1",
                 params![review_id, DraftStatus::SentBack, note, at],
             )?;
@@ -510,14 +543,20 @@ impl Store {
 /// `Store::ticket_rest_and_approve` is "Ticket what is left, and approve" — which approves
 /// in the same transaction as it moves the open findings into a ticket. A second copy of
 /// this statement is a second place for `approved_by` to be left out.
+///
+/// **`approved` is recorded as what was approved, and the write is a compare-and-set on
+/// its revision** — DEV-1346. The caller has already compared the draft with what was
+/// shown inside this transaction; the `rev` in the `WHERE` is what makes that comparison
+/// and this write one step rather than two, so no writer can land between them.
 pub(crate) fn write_approval(
     conn: &Connection,
     review_id: i64,
     event: ReviewEvent,
     by: Actor,
     at: Timestamp,
+    approved: &DraftShown,
 ) -> Result<()> {
-    conn.execute(
+    let written = conn.execute(
         // **The withdrawal is cleared here, and that is the whole of why it is cleared
         // anywhere.** A draft whose sign-off was withdrawn when the head moved under it —
         // migration 18 — carries the commit the developer had approved, and a draft that
@@ -531,10 +570,33 @@ pub(crate) fn write_approval(
              approved_by            = ?5,
              signoff_withdrawn_at   = NULL,
              signoff_withdrawn_head = NULL,
-             updated_at             = ?4
-         WHERE review_id = ?1",
-        params![review_id, DraftStatus::Approved, event, at, by],
+             updated_at             = ?4,
+             approved_body_sha256    = ?6,
+             approved_threads_sha256 = ?7,
+             approved_rev            = ?8
+         WHERE review_id = ?1 AND rev = ?8",
+        params![
+            review_id,
+            DraftStatus::Approved,
+            event,
+            at,
+            by,
+            approved.body_sha256,
+            approved.threads_sha256,
+            approved.draft_rev,
+        ],
     )?;
+
+    if written == 0 {
+        return Err(StoreError::ShownMoved {
+            what: "draft",
+            review_id,
+            moved: format!(
+                "it is no longer revision {}, which is the one being approved",
+                approved.draft_rev
+            ),
+        });
+    }
 
     Ok(())
 }
@@ -577,5 +639,20 @@ fn row_to_draft(row: &Row<'_>) -> rusqlite::Result<Draft> {
             checked_at: row.get::<_, Option<Timestamp>>("lint_checked_at")?,
         },
         updated_at: row.get("updated_at")?,
+        rev: row.get("rev")?,
+        // All three or none: they are written together by `write_approval` and cleared
+        // together by whatever takes a sign-off back.
+        approved_shown: match (
+            row.get::<_, Option<String>>("approved_body_sha256")?,
+            row.get::<_, Option<String>>("approved_threads_sha256")?,
+            row.get::<_, Option<i64>>("approved_rev")?,
+        ) {
+            (Some(body_sha256), Some(threads_sha256), Some(draft_rev)) => Some(DraftShown {
+                body_sha256,
+                threads_sha256,
+                draft_rev,
+            }),
+            _ => None,
+        },
     })
 }

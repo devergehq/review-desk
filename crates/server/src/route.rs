@@ -1,4 +1,4 @@
-//! The contract's thirty operations, as a type.
+//! The contract's thirty-one operations, as a type.
 //!
 //! [`Operation::ALL`] is the point of this module: a test walks every operation the
 //! contract declares and asserts that each one is routed and answers, rather than the set
@@ -51,6 +51,7 @@ pub enum Operation {
     DismissRule { rule_id: i64 },
     RetireRule { rule_id: i64 },
     DeferRule { rule_id: i64 },
+    SignIn,
 }
 
 impl Operation {
@@ -92,6 +93,7 @@ impl Operation {
         Operation::DismissRule { rule_id: 1 },
         Operation::RetireRule { rule_id: 1 },
         Operation::DeferRule { rule_id: 1 },
+        Operation::SignIn,
     ];
 
     /// The `operationId` from `contract/openapi.yaml`.
@@ -127,7 +129,46 @@ impl Operation {
             Operation::DismissRule { .. } => "dismissRule",
             Operation::RetireRule { .. } => "retireRule",
             Operation::DeferRule { .. } => "deferRule",
+            Operation::SignIn => "signIn",
         }
+    }
+
+    /// Whether this operation is one only the developer may make — DEV-1346.
+    ///
+    /// **The six acts that change what the developer has signed off or can see**, and the
+    /// six the contract marks with `security: developerCookie`. `tests/developer.rs` reads
+    /// the contract and fails when the two lists differ, and sends each of these with no
+    /// cookie and expects a `401`.
+    ///
+    /// Not every write. Saving a draft, deciding a finding and the rules' verbs stay open:
+    /// none of them is a sign-off, and an edit to a draft moves its revision, so a sign-off
+    /// shown before the edit is refused anyway. The agent's verbs — `brief put`,
+    /// `finding add`, `layer set` — are the command line's and never reach this server.
+    pub fn is_developer_act(self) -> bool {
+        matches!(
+            self,
+            Operation::ConfirmBrief { .. }
+                | Operation::ApproveDraft { .. }
+                | Operation::TicketRestAndApprove { .. }
+                | Operation::SendBackDraft { .. }
+                | Operation::DismissReview { .. }
+                | Operation::RestoreReview { .. }
+        )
+    }
+
+    /// Whether this operation is held to what the developer was shown — DEV-1346.
+    ///
+    /// The four sign-offs. Each takes back a hash the page was served and is refused with
+    /// a `409` that writes nothing when the record has moved since. Every one of them is a
+    /// developer act too; `tests/developer.rs` fails if one is not.
+    pub fn binds_what_was_shown(self) -> bool {
+        matches!(
+            self,
+            Operation::ConfirmBrief { .. }
+                | Operation::ApproveDraft { .. }
+                | Operation::TicketRestAndApprove { .. }
+                | Operation::SendBackDraft { .. }
+        )
     }
 
     /// The method and path this operation is reached at, for a test and for the 501's
@@ -190,6 +231,7 @@ impl Operation {
             Operation::DismissRule { rule_id } => format!("POST /rules/{rule_id}/dismiss"),
             Operation::RetireRule { rule_id } => format!("POST /rules/{rule_id}/retire"),
             Operation::DeferRule { rule_id } => format!("POST /rules/{rule_id}/defer"),
+            Operation::SignIn => "POST /developer/sign-in".to_string(),
         }
     }
 }
@@ -223,6 +265,9 @@ pub fn match_route(method: &str, path: &str) -> Target {
         ["inbox"] => (Target::Operation(Operation::GetInbox), method == "GET"),
         ["repos"] => (Target::Operation(Operation::ListRepos), method == "GET"),
         ["rules"] => (Target::Operation(Operation::ListRules), method == "GET"),
+        // **Not under `/reviews`**, because it is about who is asking rather than about any
+        // review. See `crate::developer`.
+        ["developer", "sign-in"] => (Target::Operation(Operation::SignIn), method == "POST"),
         // **`/duplicate-rounds`, beside `/timings` and for its stated reason**: the review
         // paths take an integer id, so a word here would be a path shape of its own anyway.
         // It is the one-off tidy's read, and it is a read: the acts it proposes are

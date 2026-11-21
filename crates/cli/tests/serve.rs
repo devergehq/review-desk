@@ -122,3 +122,57 @@ fn serve_is_in_the_help() {
         .success()
         .stdout(predicates::str::contains("serve"));
 }
+
+/// **The sign-in link goes to a person's terminal and nowhere else** — DEV-1346.
+///
+/// This test's `serve` writes to a file, which is what an agent's shell, a log or a pipe is:
+/// not a terminal. So the token must not be in what it printed, in either form, and the
+/// line it prints instead says how the developer signs in.
+#[test]
+fn serve_prints_no_sign_in_token_when_nobody_is_at_a_terminal() {
+    let desk = Desk::new();
+
+    let served = serve(&desk, false);
+    assert!(wait_for(&served.address()));
+    let printed = served.printed();
+    assert!(
+        !printed.contains("#sign-in="),
+        "the token was printed: {printed}"
+    );
+    assert!(
+        printed.contains("run `review-desk serve` in your own terminal"),
+        "serve should say how the developer signs in: {printed}"
+    );
+
+    let served = serve(&desk, true);
+    assert!(wait_for(&served.address()));
+    let printed = served.printed();
+    assert!(
+        !printed.contains("sign-in"),
+        "--json carried the token: {printed}"
+    );
+}
+
+/// **A binary not built for the end-to-end test takes no token from its environment.**
+///
+/// The test suite's binary is built without the `e2e` feature, so setting the variable must
+/// not choose the token: the server makes its own, and the chosen one buys nothing.
+#[test]
+#[cfg(not(feature = "e2e"))]
+fn the_end_to_end_token_variable_does_nothing_in_an_ordinary_build() {
+    let desk = Desk::new();
+    let chosen = "e".repeat(64);
+    let served = common::serve_with(&desk, false, &[("REVIEW_DESK_E2E_TOKEN", &chosen)]);
+    let address = served.address();
+    assert!(wait_for(&address));
+
+    let answer = common::post(
+        &address,
+        "/api/v1/developer/sign-in",
+        &format!("{{\"token\":\"{chosen}\"}}"),
+    );
+    assert!(
+        answer.contains("401"),
+        "a token chosen through the environment signed in: {answer}"
+    );
+}

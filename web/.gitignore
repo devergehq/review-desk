@@ -7,6 +7,8 @@ dist/
 
 # Written by the end-to-end run: the two servers' addresses, for the specs to read.
 e2e/.addresses.json
+# And the seeded server's developer cookie, as Playwright's storageState — DEV-1346.
+e2e/.signed-in.json
 test-results/
 playwright-report/
 

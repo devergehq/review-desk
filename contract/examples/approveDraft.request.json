@@ -1,3 +1,8 @@
 {
-  "event": "request_changes"
+  "event": "request_changes",
+  "shown": {
+    "body_sha256": "3b7f0c1e9a2d4b8c6e5f7a9b1c3d5e7f9a1b3c5d7e9f1a3b5c7d9e1f3a5b7c9d",
+    "threads_sha256": "9e1f3a5b7c9d3b7f0c1e9a2d4b8c6e5f7a9b1c3d5e7f9a1b3c5d7e9f1a3b5c7d",
+    "draft_rev": 3
+  }
 }

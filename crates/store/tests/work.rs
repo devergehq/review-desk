@@ -137,7 +137,11 @@ fn a_confirmed_brief_tells_an_agent_to_carry_on_and_says_who_settled_it() {
     );
 
     let confirmed = store
-        .confirm_brief(review.id, Actor::Developer)
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
         .expect("the developer confirms it");
 
     let item = item_for(&store, review.id).expect("an item");
@@ -185,7 +189,11 @@ fn a_sent_back_draft_carries_the_developers_note() {
         .put_brief(review.id, brief("the problem"))
         .expect("a brief");
     store
-        .confirm_brief(review.id, Actor::Developer)
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
         .expect("confirmed");
     store
         .put_draft(review.id, NewDraft::ready("the body"))
@@ -195,7 +203,9 @@ fn a_sent_back_draft_carries_the_developers_note() {
     assert_eq!(kind_for(&store, review.id), None);
 
     let note = "F2 is the same point as F1; cut one of them";
-    let sent_back = store.send_back_draft(review.id, note).expect("sent back");
+    let sent_back = store
+        .send_back_draft(review.id, note, &common::shown(&store, review.id))
+        .expect("sent back");
 
     let item = item_for(&store, review.id).expect("an item");
     assert_eq!(item.kind, WorkKind::DraftSentBack);
@@ -218,7 +228,11 @@ fn a_sent_back_draft_carries_the_developers_note() {
         review.id,
     );
     let again = store
-        .send_back_draft(review.id, "and the evidence on F3 is a guess")
+        .send_back_draft(
+            review.id,
+            "and the evidence on F3 is a guess",
+            &common::shown(&store, review.id),
+        )
         .expect("sent back again");
     assert_ne!(
         again.sent_back_at,
@@ -235,13 +249,22 @@ fn an_approved_draft_waits_to_be_posted_and_then_waits_for_nothing() {
         .put_brief(review.id, brief("the problem"))
         .expect("a brief");
     store
-        .confirm_brief(review.id, Actor::Developer)
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
         .expect("confirmed");
     store
         .put_draft(review.id, NewDraft::ready("the body"))
         .expect("a draft");
     let approved = store
-        .approve_draft(review.id, ReviewEvent::RequestChanges, Actor::Developer)
+        .approve_draft(
+            review.id,
+            ReviewEvent::RequestChanges,
+            Actor::Developer,
+            &common::shown(&store, review.id),
+        )
         .expect("approved");
 
     let item = item_for(&store, review.id).expect("an item");
@@ -302,7 +325,11 @@ fn a_review_a_session_abandoned_is_still_listed() {
         .put_brief(unfinished_draft.id, brief("the problem"))
         .expect("a brief");
     store
-        .confirm_brief(unfinished_draft.id, Actor::Developer)
+        .confirm_brief(
+            unfinished_draft.id,
+            Actor::Developer,
+            &common::brief_shown(&store, unfinished_draft.id),
+        )
         .expect("confirmed");
     store
         .put_draft(
@@ -326,7 +353,11 @@ fn a_review_a_session_abandoned_is_still_listed() {
         .put_brief(skipped.id, brief("the problem"))
         .expect("a brief");
     store
-        .confirm_brief(skipped.id, Actor::Developer)
+        .confirm_brief(
+            skipped.id,
+            Actor::Developer,
+            &common::brief_shown(&store, skipped.id),
+        )
         .expect("confirmed");
     store
         .set_review_layer(
@@ -523,7 +554,11 @@ fn every_reachable_state_has_one_kind_or_none() {
     );
 
     store
-        .confirm_brief(review.id, Actor::Developer)
+        .confirm_brief(
+            review.id,
+            Actor::Developer,
+            &common::brief_shown(&store, review.id),
+        )
         .expect("confirmed");
     seen(Some(WorkKind::BriefSettled), "confirmed, and no draft yet");
 
@@ -533,7 +568,7 @@ fn every_reachable_state_has_one_kind_or_none() {
     seen(None, "a ready draft is the developer's turn");
 
     store
-        .send_back_draft(review.id, "cut F2")
+        .send_back_draft(review.id, "cut F2", &common::shown(&store, review.id))
         .expect("sent back");
     seen(Some(WorkKind::DraftSentBack), "sent back");
 
@@ -566,7 +601,12 @@ fn every_reachable_state_has_one_kind_or_none() {
     );
 
     store
-        .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+        .approve_draft(
+            review.id,
+            ReviewEvent::Comment,
+            Actor::Developer,
+            &common::shown(&store, review.id),
+        )
         .expect("approved");
     seen(Some(WorkKind::DraftApproved), "approved and not posted");
 
@@ -612,13 +652,22 @@ fn reading_the_list_changes_no_row_of_the_database() {
             .put_brief(review.id, brief("the problem"))
             .expect("a brief");
         store
-            .confirm_brief(review.id, Actor::Developer)
+            .confirm_brief(
+                review.id,
+                Actor::Developer,
+                &common::brief_shown(&store, review.id),
+            )
             .expect("confirmed");
         store
             .put_draft(review.id, NewDraft::ready("the body"))
             .expect("a draft");
         store
-            .approve_draft(review.id, ReviewEvent::Comment, Actor::Developer)
+            .approve_draft(
+                review.id,
+                ReviewEvent::Comment,
+                Actor::Developer,
+                &common::shown(&store, review.id),
+            )
             .expect("approved");
     }
 

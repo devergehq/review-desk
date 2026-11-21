@@ -40,17 +40,25 @@ rule is left on because it is doing real work on the other twenty-two operations
 `listReviewTimings`, which takes a repository and therefore declares a 400 like every other
 read that takes one. CI gates on errors, which is what redocly exits non-zero for.
 
-## There is no authentication
+## Who may sign off
 
-**The server binds `127.0.0.1` only, and this version has no authentication of any
-kind.** Being able to reach the port is the authorisation. That is why `redocly.yaml`
-turns off the `security-defined` rule: the honest statement is "no auth", and declaring an
-empty security scheme to quiet a linter would imply a scheme exists.
+**The server binds `127.0.0.1` only. Reaching it is enough to read, and signing off needs
+the developer's cookie as well** (DEV-1346). Six operations carry
+`security: developerCookie`: `confirmBrief`, `approveDraft`, `ticketRestAndApprove`,
+`sendBackDraft`, `dismissReview` and `restoreReview`. The document's top-level
+`security: [{}]` says that everything else is open. That is why `redocly.yaml` turns
+`security-defined` back on: it was off while the honest statement was "no auth".
 
-This is sound only while the bind holds. Binding `0.0.0.0`, putting the port through a
-tunnel, or running it on a shared machine makes the whole record readable and writable by
-anyone who can reach it. Authentication is out of scope for DEV-854, and the rule above
-goes back on in the same change that adds it.
+The cookie comes from `signIn`, which spends a one-time token that `review-desk serve`
+prints, as the URL's fragment, to its own terminal and nowhere else. The four sign-offs
+among the six also carry what the page was shown: `ShownDraft`, or the brief's `sha256`. A
+record that has moved since is a `409` `changed_since_shown` that writes nothing.
+
+**What this does not stop.** Code running as the developer can read the browser's cookies
+or the terminal's scrollback. The cookie stops an agent signing off with one `curl`; it
+does not stop one set on stealing a cookie. The bind still matters as much as it did:
+binding `0.0.0.0`, tunnelling the port, or running on a shared machine makes the whole
+record readable by anyone who can reach it, and every write but the six writable.
 
 ## Conventions
 

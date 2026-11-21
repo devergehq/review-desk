@@ -37,6 +37,7 @@ import type {
   Rule,
   RuleStage,
   RulesPage,
+  ShownDraft,
   TicketedAndApproved,
 } from '~/types/desk'
 
@@ -71,7 +72,8 @@ export interface DeskBackend {
 
   /* The sixteen writes. */
   startReview: (prUrl: string) => Promise<Review>
-  confirmBrief: (reviewId: number) => Promise<Brief>
+  /** The brief the page drew, by its `sha256` — DEV-1346. */
+  confirmBrief: (reviewId: number, shownBriefSha256: string) => Promise<Brief>
   setFindingDisposition: (
     reviewId: number,
     seq: number,
@@ -97,8 +99,9 @@ export interface DeskBackend {
     body: string,
     edits: DraftEditToRecord[],
   ) => Promise<DraftDetail>
-  approveDraft: (reviewId: number, event: ReviewEvent) => Promise<DraftDetail>
-  sendBackDraft: (reviewId: number, note: string) => Promise<DraftDetail>
+  /** `shown` is the `shown` of the draft document the page rendered — DEV-1346. */
+  approveDraft: (reviewId: number, event: ReviewEvent, shown: ShownDraft) => Promise<DraftDetail>
+  sendBackDraft: (reviewId: number, note: string, shown: ShownDraft) => Promise<DraftDetail>
   /**
    * `POST /reviews/{id}/messages` — the developer asks the review's session something.
    *
@@ -114,7 +117,13 @@ export interface DeskBackend {
   ticketRestAndApprove: (
     reviewId: number,
     note: string | null,
+    shown: ShownDraft,
   ) => Promise<TicketedAndApproved>
+  /**
+   * `POST /developer/sign-in` — trade the sign-in link's one-time token for the developer
+   * cookie. The sample backend has no developer to be, and answers yes.
+   */
+  signIn: (token: string) => Promise<{ developer: true }>
   requestNitTicket: (reviewId: number, ticketId?: string | null) => Promise<NitTicket>
   /**
    * `POST …/dismiss` — the developer takes a review out of play, with a reason.

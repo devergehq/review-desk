@@ -931,6 +931,7 @@ fn moving_a_posted_finding_once_the_draft_is_signed_off_is_refused() {
             review,
             review_desk_store::ReviewEvent::RequestChanges,
             Actor::Developer,
+            &common::shown(&store, review),
         )
         .expect("the developer signs off");
 
@@ -975,6 +976,7 @@ fn moving_a_finding_that_posts_nowhere_is_allowed_after_the_sign_off() {
             review,
             review_desk_store::ReviewEvent::RequestChanges,
             Actor::Developer,
+            &common::shown(&store, review),
         )
         .expect("the developer signs off");
 
@@ -1225,6 +1227,7 @@ fn a_body_the_blocks_no_longer_compose_to_is_not_handed_over_and_has_a_way_out()
             review,
             review_desk_store::ReviewEvent::RequestChanges,
             Actor::Developer,
+            &common::shown(&store, review),
         )
         .expect("the developer signs off");
 
@@ -1259,7 +1262,11 @@ fn a_body_the_blocks_no_longer_compose_to_is_not_handed_over_and_has_a_way_out()
     // handed over, could not be rewritten and could not be sent back, and the only
     // transition left was posting the body the refusal exists to stop.
     store
-        .send_back_draft(review, "the index is in the old shape; write it again")
+        .send_back_draft(
+            review,
+            "the index is in the old shape; write it again",
+            &common::shown(&store, review),
+        )
         .expect("the developer takes the sign-off back");
 
     let draft = store.get_draft(review).expect("draft");
@@ -1301,6 +1308,7 @@ fn a_body_the_blocks_no_longer_compose_to_is_not_handed_over_and_has_a_way_out()
             review,
             review_desk_store::ReviewEvent::RequestChanges,
             Actor::Developer,
+            &common::shown(&store, review),
         )
         .expect("and the developer signs it off again");
 
@@ -1318,6 +1326,7 @@ fn a_sign_off_taken_back_while_a_session_is_mid_post_stops_the_post() {
             review,
             review_desk_store::ReviewEvent::RequestChanges,
             Actor::Developer,
+            &common::shown(&store, review),
         )
         .expect("the developer signs off");
 
@@ -1326,7 +1335,11 @@ fn a_sign_off_taken_back_while_a_session_is_mid_post_stops_the_post() {
     // in flight. What must not happen is the old body being recorded as posted — and
     // `post_draft` takes an approved draft and nothing else, which is what closes it.
     store
-        .send_back_draft(review, "hold on — the blocker is wrong")
+        .send_back_draft(
+            review,
+            "hold on — the blocker is wrong",
+            &common::shown(&store, review),
+        )
         .expect("the developer takes it back");
 
     let refused = store

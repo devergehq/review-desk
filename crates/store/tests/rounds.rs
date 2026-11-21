@@ -648,6 +648,7 @@ fn the_timeline_reports_what_each_round_posted_and_what_came_back() {
             first,
             ReviewEvent::RequestChanges,
             review_desk_store::Actor::Developer,
+            &common::shown(&store, first),
         )
         .unwrap();
     store.post_draft(first, "gh-review-1").unwrap();

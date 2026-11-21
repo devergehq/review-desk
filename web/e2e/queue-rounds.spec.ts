@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
-import { cli, scratch, serve, stop, type Serving } from './harness'
+import { cli, scratch, serve, stop, type Serving, signedIn } from './harness'
 
 /*
  * **The queue's single row for a pull request whose later round has posted. DEV-983, in a
@@ -238,6 +238,11 @@ test.beforeAll(async () => {
   })
 
   serving = await serve(database)
+})
+
+/* This spec's own server, so its own cookie: the config's is the seeded server's — DEV-1346. */
+test.beforeEach(async ({ context }) => {
+  await signedIn(context, serving)
 })
 
 test.afterAll(async () => {

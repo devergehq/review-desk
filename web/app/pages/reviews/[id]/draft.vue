@@ -93,6 +93,70 @@ const notice = ref<DeskNotice | null>(null)
  * all, and reads nothing declared after it.
  */
 const ticketingRest = ref(false)
+
+/*
+ * **A draft re-drawn under the developer says so** — DEV-1346, found by its self-review.
+ *
+ * The page re-reads every open screen after any write, including one made from another card
+ * on this page — asking the session something, say. If the session rewrote the draft in the
+ * meantime, the new text and its `shown` replace the old, and a sign-off then binds to the
+ * new text. That is correct, and the developer has to know it happened: so the `shown` the
+ * page last drew is kept, and a new one arriving *outside this page's own writes* puts up the
+ * same sentence a refused sign-off does — except after this page's own writes that move the
+ * draft, whose re-read is the developer's doing and says what it did in its own notice.
+ */
+const lastShown = ref<string | null>(null)
+const CHANGED_UNDERNEATH = 'The draft changed while you were reading it · review the change.'
+/*
+ * Whether the re-read inside the write now finishing brought a rewritten draft. A write's own
+ * notice is put up after its re-read, so without this the change would be announced and at
+ * once replaced by "Queued as one ticket" — `said` keeps it, ahead of what the write did.
+ */
+let changedUnderneath = false
+/*
+ * **Set by the writes that move the draft themselves**, and by nothing else: saving, and the
+ * three sign-offs, each of which says what it did in its own notice. Not `working`, which
+ * asking for the nit ticket sets too — its re-read would otherwise carry a session's
+ * rewrite in with the notice muted. Found by the second round of DEV-1346's self-review.
+ */
+const movingTheDraft = ref(false)
+
+/** Run one of this page's own writes that moves the draft. */
+async function moving<T>(write: () => Promise<T>): Promise<T> {
+  movingTheDraft.value = true
+  try {
+    return await write()
+  }
+  finally {
+    movingTheDraft.value = false
+  }
+}
+watch(
+  () => detail.data.value,
+  (data) => {
+    if (!data) return
+    const drawn = [
+      data.draft.review_id,
+      data.shown.draft_rev,
+      data.shown.body_sha256,
+      data.shown.threads_sha256,
+    ].join(':')
+    const before = lastShown.value
+    lastShown.value = drawn
+    if (before === null || before === drawn || movingTheDraft.value) return
+    /* Another review in the same page instance is a navigation, not a change under anyone. */
+    if (before.split(':')[0] !== String(data.draft.review_id)) return
+    /*
+     * Remembered only while one of this page's own writes is in flight, because only then is
+     * a `said()` coming to replace this notice. A re-draw from another card or from
+     * `PostingWatch`'s timer has no `said()` after it, and a flag left set would put this
+     * sentence in front of the developer's next, unrelated success. Round 3 of DEV-1346's
+     * self-review.
+     */
+    changedUnderneath = working.value
+    notice.value = { tone: 'problem', text: CHANGED_UNDERNEATH }
+  },
+)
 const ticketNote = ref('')
 
 /**
@@ -487,7 +551,11 @@ function canSendBack(data: DraftDetail): boolean {
 }
 
 function said(result: WriteResult): boolean {
-  notice.value = noticeFor(result)
+  const done = noticeFor(result)
+  notice.value = changedUnderneath
+    ? { tone: 'problem', text: `${CHANGED_UNDERNEATH} ${done?.text ?? ''}`.trim() }
+    : done
+  changedUnderneath = false
   return result.ok
 }
 
@@ -531,17 +599,25 @@ async function save() {
   if (!data) return
   if (!ofThisReview(data)) return stillReading()
   working.value = true
-  const result = await desk.saveDraft(data.draft.review_id, loadedBody.value, editing.value)
+  const result = await moving(() =>
+    desk.saveDraft(data.draft.review_id, loadedBody.value, editing.value))
   working.value = false
   if (said(result)) view.value = 'rendered'
 }
 
+/*
+ * **Every sign-off on this page sends `data.shown`: the hashes of the document on screen** —
+ * DEV-1346. A session that rewrites the draft while it is open is refused at the click, and
+ * the refusal reads the page again and says "the draft changed while you were reading it ·
+ * review the change". A re-read for any other reason that brings a rewritten draft says the
+ * same — see `lastShown` above — so the text never changes under the developer unannounced.
+ */
 async function approve() {
   const data = detail.data.value
   if (!data) return
   if (!ofThisReview(data)) return stillReading()
   working.value = true
-  said(await desk.approveDraft(data.draft.review_id, event.value))
+  said(await moving(() => desk.approveDraft(data.draft.review_id, event.value, data.shown)))
   working.value = false
 }
 
@@ -550,7 +626,8 @@ async function sendBack() {
   if (!data) return
   if (!ofThisReview(data)) return stillReading()
   working.value = true
-  const result = await desk.sendBackDraft(data.draft.review_id, note.value)
+  const result = await moving(() =>
+    desk.sendBackDraft(data.draft.review_id, note.value, data.shown))
   working.value = false
   if (said(result)) {
     sendingBack.value = false
@@ -654,7 +731,8 @@ async function ticketRest() {
   if (!data) return
   if (!ofThisReview(data)) return stillReading()
   working.value = true
-  const result = await desk.ticketRestAndApprove(data.draft.review_id, ticketNote.value)
+  const result = await moving(() =>
+    desk.ticketRestAndApprove(data.draft.review_id, ticketNote.value, data.shown))
   working.value = false
   if (said(result)) {
     ticketingRest.value = false

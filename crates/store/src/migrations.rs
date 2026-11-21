@@ -1855,6 +1855,66 @@ CREATE TABLE fresh_session_requests (
 );
 "#,
     },
+    Migration {
+        version: 24,
+        name: "shown-draft",
+        sql: r#"
+-- **An approval binds to the draft the developer was shown** — DEV-1346, under DEV-1345.
+--
+-- Before this, approving applied to whatever the draft was at the moment of the click, so a
+-- session that rewrote the draft while the developer read it had its rewrite approved. The
+-- page now sends back what it showed — the body's hash, the threads' hash and this revision
+-- — and the store refuses the act when any of the three has moved.
+--
+-- **`rev` counts every change to what posts**, and the triggers below are what count it.
+-- A column every writer had to remember to bump would be a column some writer forgets: the
+-- body is written by `put_draft`, by the composition, by a decision and by the hand-over's
+-- repair, and its blocks by three more. A trigger sees all of them, including the next one.
+--
+-- The body's trigger counts a body that changed; the blocks' count any insert or delete and
+-- any update of what posts. So a session's `put_draft`, which deletes and re-inserts every
+-- block, moves `rev` even when its words come out the same: the draft was written under the
+-- developer, which is what `rev` is for. The hashes are what say whether the words moved.
+--
+-- **The approved columns record what was approved**, so a later post can refuse a draft
+-- that moved after it was signed off (DEV-1347). They are the hashes of the draft *as
+-- approved*: for a plain approval that is what was shown, and for "ticket what is left, and
+-- approve" it is the body recomposed without the ticketed findings. Cleared with the rest
+-- of the sign-off when a draft is sent back.
+ALTER TABLE drafts ADD COLUMN rev                      INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE drafts ADD COLUMN approved_body_sha256     TEXT;
+ALTER TABLE drafts ADD COLUMN approved_threads_sha256  TEXT;
+ALTER TABLE drafts ADD COLUMN approved_rev             INTEGER;
+
+CREATE TRIGGER drafts_rev_on_body AFTER UPDATE OF body ON drafts
+WHEN OLD.body IS NOT NEW.body
+BEGIN
+    UPDATE drafts SET rev = rev + 1 WHERE review_id = NEW.review_id;
+END;
+
+CREATE TRIGGER drafts_rev_on_section_insert AFTER INSERT ON draft_sections
+BEGIN
+    UPDATE drafts SET rev = rev + 1 WHERE review_id = NEW.review_id;
+END;
+
+-- What posts is the kind, the finding, the title and the text, in position order. The
+-- agent's own words are kept beside them for the harvester and post nothing.
+CREATE TRIGGER drafts_rev_on_section_update AFTER UPDATE ON draft_sections
+WHEN OLD.position    IS NOT NEW.position
+  OR OLD.kind        IS NOT NEW.kind
+  OR OLD.finding_seq IS NOT NEW.finding_seq
+  OR OLD.title       IS NOT NEW.title
+  OR OLD.text        IS NOT NEW.text
+BEGIN
+    UPDATE drafts SET rev = rev + 1 WHERE review_id = NEW.review_id;
+END;
+
+CREATE TRIGGER drafts_rev_on_section_delete AFTER DELETE ON draft_sections
+BEGIN
+    UPDATE drafts SET rev = rev + 1 WHERE review_id = OLD.review_id;
+END;
+"#,
+    },
 ];
 
 /// The version a freshly created database lands on.

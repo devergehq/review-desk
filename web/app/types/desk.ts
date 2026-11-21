@@ -98,6 +98,8 @@ export type TicketRestAndApproveRequest = Schema['TicketRestAndApproveRequest']
 export type SaveDraftRequest = Schema['SaveDraftRequest']
 export type SaveDraftEdit = NonNullable<SaveDraftRequest['edits']>[number]
 export type ApproveDraftRequest = Schema['ApproveDraftRequest']
+/** What the draft's page was shown, sent back with every sign-off on it — DEV-1346. */
+export type ShownDraft = Schema['ShownDraft']
 export type SendBackDraftRequest = Schema['SendBackDraftRequest']
 export type RequestNitTicketRequest = Schema['RequestNitTicketRequest']
 export type PromoteRuleRequest = Schema['PromoteRuleRequest']

@@ -12,9 +12,30 @@
 //! `cargo build` that fails on a machine with no Node is not an option DEV-861 allows.
 
 use std::fmt::Write as _;
+
+/// **The `e2e` feature in a release-profile build is refused here as well as in
+/// `src/developer.rs`** — DEV-1346.
+///
+/// That file's `compile_error!` is keyed on `debug_assertions`, and the self-review showed
+/// it can be stepped round: `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true cargo build
+/// --release --features e2e` keeps the assertions on and builds an optimised binary that
+/// takes its sign-in token from the environment. Cargo tells a build script which profile
+/// it is building, whatever that profile's settings, so this check holds where that one
+/// does not. Both stay: the attribute is what a reader of `developer.rs` sees.
+fn refuse_an_end_to_end_release() {
+    let profile = std::env::var("PROFILE").unwrap_or_default();
+    if profile == "release" && std::env::var_os("CARGO_FEATURE_E2E").is_some() {
+        panic!(
+            "the `e2e` feature lets the environment choose the sign-in token, and is never \
+             built with the release profile: build the end-to-end test's binary in debug"
+        );
+    }
+}
 use std::path::{Path, PathBuf};
 
 fn main() {
+    refuse_an_end_to_end_release();
+
     let root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"))
         .join("../../web/.output/public");
 
