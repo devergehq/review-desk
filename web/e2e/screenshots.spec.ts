@@ -1,9 +1,12 @@
-import { resolve } from 'node:path'
+import { writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import { fakeAllele } from './fakeAllele'
 import {
   cli,
+  cliJson,
   draftStamps,
   fresh,
   openSteps,
@@ -14,6 +17,7 @@ import {
   seedRoundTwoDraft,
   seedStructuredReview,
   serve,
+  signedIn,
   stop,
 } from './harness'
 
@@ -82,15 +86,21 @@ test.describe('a seeded database', () => {
      * one. Two names for one picture, and neither of them showed a finding. Step 5 is the
      * page this set was missing.
      */
-    await page.goto(`${seeded}reviews/${reviewId}/findings`)
     /*
      * **Scoped to the pane**, because step 1.2 of the design loop made this page a dense
      * list beside the finding it has chosen — so a finding's claim is now drawn on its row
      * and again in the pane, and the bare text matched three elements. This project is not
      * in CI, which is why that went unnoticed until the case page was built.
+     *
+     * **F1 by its address, and the pane by its id** (DEV-1336). This looked for
+     * `#finding-1`, the heading of the finding shown — which was F1 only while the page
+     * opened on the first finding. DEV-1328 opens it on the first of *To post*, so the
+     * heading was another finding's and the wait timed out. `?finding=F1` is the address
+     * every other page links a finding with (`findingPath`).
      */
+    await page.goto(`${seeded}reviews/${reviewId}/findings?finding=F1`)
     await expect(
-      page.locator('#finding-1').getByText('A retried delivery is sent without'),
+      page.locator('#the-finding').getByText('A retried delivery is sent without'),
     ).toBeVisible()
     await shot(page, 'seeded-2-review')
 
@@ -178,6 +188,19 @@ test.describe('the shell', () => {
     await expect(page.locator('#sidebar')).toBeVisible()
     await page.waitForTimeout(200)
     await page.screenshot({ path: `${INTO}/shell-3-menu-open-390.png` })
+    await page.keyboard.press('Escape')
+
+    /*
+     * **S14: the conversation as a bottom sheet** (DEV-1336), opened from the bar's *Ask*
+     * over the dimmed review. Viewport-high: a sheet is fixed to the window, and a
+     * full-page capture would draw it over the middle of a tall page. This server has no
+     * Allele, so it is read only; the two-way sheet is `sheet-1-asked-390.png` below.
+     */
+    await page.locator('.topbar .ask').click()
+    await expect(page.locator('#conversation')).toBeVisible()
+    await page.waitForTimeout(200)
+    await page.screenshot({ path: `${INTO}/shell-5-conversation-sheet-390.png` })
+    await page.keyboard.press('Escape')
 
     /*
      * **S17: nothing waits on the developer** (DEV-1325). The seed always has something
@@ -885,6 +908,65 @@ test.describe('Overview', () => {
     }
     finally {
       await stop(own)
+      await page.setViewportSize({ width: 1440, height: 900 })
+    }
+  })
+})
+
+/*
+ * **S14: the sheet two way, with an answer in it** (DEV-1336), beside the target. The
+ * structured review is S14's own case — scheduled exports, F9 — served from a database of
+ * its own beside `fakeAllele`, so the sheet's panel is two way: the question is asked in the
+ * browser, through the sheet's composer, and the session's answer is written with
+ * `review-desk message reply` in the contract's shape, a regrade of F9 suggested in it.
+ * Nothing is stubbed in the browser, and nothing here starts or drives a session.
+ */
+test.describe('the conversation on a phone', () => {
+  test('asked from the sheet, and answered', async ({ page }) => {
+    const directory = scratch()
+    const database = fresh(directory)
+    const review = seedStructuredReview(database, 'Give a scheduled export its own context').reviewId
+    cli(database, ['review', 'link', '--review', String(review), '--session', 'ses-dev-1336'])
+    const allele = await fakeAllele('idle')
+    const own = await serve(database, { allele: allele.socket })
+    try {
+      await signedIn(page.context(), own)
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(`${own.url}reviews/${review}/findings?finding=F9`)
+      await page.waitForLoadState('networkidle')
+
+      await page.locator('.topbar .ask').click()
+      const panel = page.locator('#conversation [data-testid="conversation-panel"]')
+      await expect(panel).toHaveAttribute('data-mode', 'two_way')
+      await panel.locator('textarea').fill('Does it also happen on the web path, or only scheduled?')
+      await panel.getByRole('button', { name: 'Ask', exact: true }).click()
+      await expect(panel.locator('[data-author="developer"]')).toHaveCount(1)
+
+      const listed = cliJson(database, ['message', 'list', '--review', String(review)]) as unknown as {
+        messages: Array<{ seq: number, author: string }>
+      }
+      const asked = Math.max(...listed.messages.filter(one => one.author === 'developer').map(one => one.seq))
+      const answer = join(directory, 'sheet-answer.json')
+      writeFileSync(answer, JSON.stringify({
+        kind: 'answer',
+        about: { finding: 'F9' },
+        headline: 'Both. The web path calls the same policy, so an empty list exports every column there too.',
+        points: [{ basis: 'read', text: 'ExportController.php:41 passes the definition straight through.' }],
+        cites: ['F9', 'app/Http/Controllers/ExportController.php:41'],
+        suggests: [{ type: 'regrade', finding: 'F9', from: 'should', to: 'blocker', why: 'Both paths leak private columns.' }],
+      }))
+      cli(database, ['message', 'reply', '--review', String(review), '--step', 'code_review', '--to', String(asked), '--answer', answer])
+
+      await page.goto(`${own.url}reviews/${review}/findings?finding=F9`)
+      await page.waitForLoadState('networkidle')
+      await page.locator('.topbar .ask').click()
+      await expect(panel.getByText('Both. The web path calls the same policy')).toBeVisible()
+      await page.waitForTimeout(400)
+      await page.screenshot({ path: `${INTO}/sheet-1-asked-390.png` })
+    }
+    finally {
+      await stop(own)
+      await allele.close()
       await page.setViewportSize({ width: 1440, height: 900 })
     }
   })
