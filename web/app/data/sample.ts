@@ -47,6 +47,9 @@ import { count, reviewWorkInWords, reviewWorkIsOneThing } from '~/utils/format'
 import { nothingMoved } from '~/utils/rounds'
 import type { ReviewTab } from '~/utils/reviewTabs'
 import type {
+  AddFindingRequest,
+  PromptedBy,
+  SuggestionAnswer,
   ReviewLayerName,
   ReviewMessage,
   MessageAbout,
@@ -1658,6 +1661,7 @@ function addMessage(
     parsed: false,
     answer: null,
     superseded_by: null,
+    suggestion_answers: [],
   }
   source.messages.push(message)
   return message
@@ -1928,6 +1932,7 @@ function decideFinding(
 
   /* Computed from the request alone, before anything is written. */
   checkDecision(request)
+  if (request.prompted_by) prompting(reviewId, request.prompted_by)
 
   const drafted = draftById(reviewId)
   if (!drafted) throw notFound(`draft on review ${reviewId}`)
@@ -2059,8 +2064,135 @@ function decideFinding(
     detail,
   }
   owner.outcomes.push(outcome)
+  if (request.prompted_by) answer(reviewId, request.prompted_by, 'accepted', { outcome_id: outcome.id })
 
   return { finding, outcome, draft: standing(drafted) }
+}
+
+/* ------------------------- What the developer made of a suggestion ------------------------- */
+
+/**
+ * The suggestion a prompt names, read as the store reads it — DEV-1334. Refused when the
+ * reply did not parse, has no suggestion at that place, or has been answered already. The
+ * store's own check (`suggestion.rs`) also holds the suggestion's type to the act; sample data
+ * holds no session's replies, so the sample is only as strict as it can be shown to be.
+ */
+function prompting(reviewId: number, prompted: PromptedBy): ReviewMessage {
+  const message = messagesOf(reviewId).find(one => one.seq === prompted.message)
+  if (!message) throw notFound(`message ${prompted.message} on review ${reviewId}`)
+  if (!message.answer) {
+    throw invalidValue('seq', `message ${prompted.message} has no answer to act on.`, 'a session reply that parsed')
+  }
+  const place = prompted.suggestion ?? null
+  if (place != null && !(message.answer.suggests ?? [])[place - 1]) {
+    throw invalidValue('suggestion', String(place), 'the place of one of the reply\'s suggestions, from 1')
+  }
+  if (message.suggestion_answers.some(held => (held.suggestion ?? null) === place)) {
+    throw conflict(`That suggestion of message ${prompted.message} is already answered.`)
+  }
+  return message
+}
+
+/** Record the developer's answer on the reply it is about. */
+function answer(
+  reviewId: number,
+  prompted: PromptedBy,
+  verdict: SuggestionAnswer['verdict'],
+  wrote: { finding_seq?: number, outcome_id?: number, reason?: string | null } = {},
+): SuggestionAnswer {
+  const message = messagesOf(reviewId).find(one => one.seq === prompted.message)!
+  const made: SuggestionAnswer = {
+    message: prompted.message,
+    suggestion: prompted.suggestion ?? null,
+    verdict,
+    reason: wrote.reason ?? null,
+    finding_seq: wrote.finding_seq ?? null,
+    finding_key: wrote.finding_seq != null ? `F${wrote.finding_seq}` : null,
+    outcome_id: wrote.outcome_id ?? null,
+    answered_at: nowIso(),
+  }
+  message.suggestion_answers.push(made)
+  return made
+}
+
+/** `POST /reviews/{id}/findings` — the developer adds a finding from the conversation. */
+function addFinding(reviewId: number, request: AddFindingRequest): Finding {
+  const owner = reviewById(reviewId)
+  if (!owner) throw notFound(`review ${reviewId}`)
+  const message = prompting(reviewId, request.prompted_by)
+  /* One answer adds one finding, whichever door came first — as `suggestion.rs` refuses. */
+  if (message.suggestion_answers.some(one => one.finding_seq != null)) {
+    throw conflict(`Message ${request.prompted_by.message} already added a finding.`)
+  }
+  const drafted = draftById(reviewId)
+  if (drafted && (drafted.draft.status === 'approved' || drafted.draft.status === 'posted')) {
+    throw conflict(`This draft is ${drafted.draft.status}, so no finding can be added to it.`)
+  }
+  const title = request.title.trim()
+  const where = request.where.trim()
+  const at = /^(\S+):(\d+)$/.exec(where)
+  const seq = Math.max(0, ...owner.findings.map(one => one.seq)) + 1
+  const finding: Finding = {
+    review_id: reviewId,
+    seq,
+    key: `F${seq}`,
+    lens: 'conversation',
+    severity: request.severity,
+    file: at ? at[1]! : where,
+    line: at ? Number(at[2]) : null,
+    line_sha: null,
+    claim: title,
+    title,
+    evidence: null,
+    disposition: 'in_draft',
+    disposition_reason: null,
+    github_comment_id: null,
+    rule_id: null,
+    rule_key: null,
+    hunk: null,
+    flagged_line: null,
+    inline_comment: null,
+    why_it_matters: title,
+    proof: null,
+    proof_note: null,
+    verification: request.basis === 'ran' ? 'reproduced' : request.basis === 'read' ? 'read_not_run' : 'unknown',
+    suggested_fix: null,
+    fix_references: [],
+    created_at: nowIso(),
+    round_status: 'new',
+    round_status_by: null,
+    round_status_checked: null,
+    round_status_at: null,
+    round_status_commit: null,
+    continues_review_id: null,
+    introduced_by_commit: null,
+    introduced_by_seq: null,
+    introduced_by_key: null,
+    prompted_by: request.prompted_by.message,
+  }
+  owner.findings.push(finding)
+  retally(owner)
+  answer(reviewId, request.prompted_by, 'accepted', { finding_seq: seq })
+  return finding
+}
+
+/** `POST …/messages/{seq}/suggestions/{n}/dismiss` — kept, and the reason said again. */
+function dismissSuggestion(
+  reviewId: number,
+  seq: number,
+  suggestion: number,
+  reason: string | null,
+): SuggestionAnswer {
+  const message = messagesOf(reviewId).find(one => one.seq === seq)
+  if (!message?.answer?.suggests?.[suggestion - 1]) throw notFound(`suggestion ${suggestion} of message ${seq}`)
+  const said = (reason ?? '').trim() || null
+  const held = message.suggestion_answers.find(one => one.suggestion === suggestion)
+  if (held?.verdict === 'accepted') throw conflict('That suggestion was accepted.')
+  if (held) {
+    held.reason = said
+    return held
+  }
+  return answer(reviewId, { message: seq, suggestion }, 'dismissed', { reason: said })
 }
 
 /**
@@ -2618,6 +2750,9 @@ export function sampleBackend(): DeskBackend {
       answered(wrote(reviewId, setFindingDisposition(reviewId, seq, disposition, reason))),
     decideFinding: async (reviewId, seq, request) =>
       answered(wrote(reviewId, decideFinding(reviewId, seq, request))),
+    addFinding: async (reviewId, request) => answered(wrote(reviewId, addFinding(reviewId, request))),
+    dismissSuggestion: async (reviewId, seq, suggestion, reason) =>
+      answered(dismissSuggestion(reviewId, seq, suggestion, reason)),
     saveDraft: async (id, body, edits) =>
       answered(standing(wrote(id, saveDraft(id, body, edits)))),
     approveDraft: async (id, event) => answered(standing(wrote(id, approveDraft(id, event)))),

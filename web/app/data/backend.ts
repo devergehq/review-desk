@@ -13,6 +13,7 @@
  */
 
 import type {
+  AddFindingRequest,
   Brief,
   DecideFindingRequest,
   ReviewsShown,
@@ -39,6 +40,7 @@ import type {
   RuleStage,
   RulesPage,
   ShownDraft,
+  SuggestionAnswer,
   TicketedAndApproved,
 } from '~/types/desk'
 
@@ -95,6 +97,19 @@ export interface DeskBackend {
     seq: number,
     request: DecideFindingRequest,
   ) => Promise<FindingDecisionMade>
+  /**
+   * `POST /reviews/{id}/findings` — the developer adds a finding from the conversation: the
+   * one developer-side call that adds one (DEV-1334). Accept on `new_finding` and *Turn into
+   * a finding* both send it.
+   */
+  addFinding: (reviewId: number, request: AddFindingRequest) => Promise<Finding>
+  /** `POST …/messages/{seq}/suggestions/{n}/dismiss` — kept with the optional reason. */
+  dismissSuggestion: (
+    reviewId: number,
+    seq: number,
+    suggestion: number,
+    reason: string | null,
+  ) => Promise<SuggestionAnswer>
   saveDraft: (
     reviewId: number,
     body: string,

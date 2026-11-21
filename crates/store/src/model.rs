@@ -1405,6 +1405,13 @@ pub struct Finding {
     /// The earlier finding whose fix caused this one, by its number. A number alone is
     /// enough: after migration 7 a number is an identity across the whole pull request.
     pub introduced_by_seq: Option<i64>,
+    /// **The message that suggested it**, by its number on this review, when the developer
+    /// added it by accepting a session's suggestion or turning an answer into a finding —
+    /// DEV-1334, migration 27. `None` for every finding a session raised itself.
+    ///
+    /// Provenance only. Adding it was the developer's act, and nothing here names a session:
+    /// Patrick, 21 November 2026, "no session's name goes on a developer's decision".
+    pub prompted_by: Option<i64>,
     pub created_at: Timestamp,
 }
 
@@ -3211,4 +3218,57 @@ impl TagReading {
             }
         }
     }
+}
+
+/// **Which message prompted a developer's act**, and which of its suggestions — DEV-1334.
+///
+/// `message` is the reply's number on the review. `suggestion` is the suggestion's place in
+/// that reply's `suggests`, from 1, or `None` when the developer turned the whole answer into
+/// a finding rather than accepting one thing it suggested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptedBy {
+    pub message: i64,
+    #[serde(default)]
+    pub suggestion: Option<i64>,
+}
+
+string_enum! {
+    /// What the developer made of one suggestion.
+    SuggestionVerdict as "verdict" {
+        /// Taken: the decision it suggested is in the record, through the page's own call.
+        Accepted => "accepted",
+        /// Not taken, with the developer's reason when they gave one.
+        Dismissed => "dismissed",
+    }
+}
+
+/// The developer's answer to one suggestion, or to a whole answer turned into a finding.
+/// Migration 27.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SuggestionAnswer {
+    pub review_id: i64,
+    /// The reply the suggestion is in.
+    pub message: i64,
+    /// Its place in the reply's `suggests`, from 1, or `None` for the whole answer.
+    pub suggestion: Option<i64>,
+    pub verdict: SuggestionVerdict,
+    /// Why it was dismissed, in the developer's words. Only ever on a dismissal.
+    pub reason: Option<String>,
+    /// The finding an acceptance added, when it added one.
+    pub finding_seq: Option<i64>,
+    /// The outcome an acceptance recorded, when it was a decision on a finding.
+    pub outcome_id: Option<i64>,
+    pub answered_at: Timestamp,
+}
+
+/// A finding the developer adds from the conversation: what `new_finding` carries, and what
+/// *Turn into a finding* asks for. DEV-1334.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeveloperFinding {
+    pub severity: Severity,
+    pub title: String,
+    /// Where it is, as the session would cite it: `path/to/file.php:41`, or a phrase.
+    #[serde(rename = "where")]
+    pub at: String,
+    pub basis: crate::answer::Basis,
 }

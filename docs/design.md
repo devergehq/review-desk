@@ -180,7 +180,7 @@ and never re-checking it. Each rule is in the file named:
   (*No agent connected · you can read, not ask*). Every question, the box's and *Ask it again,
   in the format*, leaves through the panel's one `send`, which asks `asksFromHere` first.
 - **A reply is drawn in the shape the server parsed**: the headline, each point after its
-  basis, the cites, *not sure*, the suggestions inert; `working` as its activity steps; `cant`
+  basis, the cites, *not sure*, the suggestions (which act, below); `working` as its activity steps; `cant`
   as *can't answer yet*; a reply that did not parse folded after ~200 characters with one
   button. A reply the server marks `superseded_by` is not drawn. `web/app/components/ConversationReply.vue`.
 - **A cite is a link only when the record holds what it names**, and the session's words
@@ -190,6 +190,14 @@ and never re-checking it. Each rule is in the file named:
   their reason**, and *Asked so far* counts the developer's questions by the tab each was
   about. `suggestedQuestions` and `askedSoFar` in `web/app/utils/conversation.ts`.
 - **Nothing in it is sized to the column**, so the phone's sheet hosts the same component.
+- **A suggestion is accepted through the page's own control, and dismissed with one click**
+  (DEV-1334, S8). Accept on `regrade`, `add_to_draft` and `set_aside` is the decision `G`, `E`
+  and `S` make; on `new_finding`, and *Turn into a finding* on an answer, it is the one call
+  that adds a finding, and Findings marks the finding *new*; a `draft_reply` fills the reply on
+  Replies for the developer to send; a `follow_up` fills the ask box. An answered suggestion is
+  drawn as one line in place of its buttons (*Added as F16 · should · ran*). The reason for a
+  dismissal is asked after the click, never before it. **No Undo**: the page's decisions have
+  none. `accepting` in `web/app/utils/suggestionActions.ts`; `SuggestionActions.vue`.
 
 ## Two kinds of screen
 
@@ -499,6 +507,7 @@ Neither of these is a decision against; both are waiting on real use.
 | 21 Nov 2026 | `P` Promote and `N` Not a rule on Rules | The keys table |
 | 21 Nov 2026 | Draft's sign-off is the header's action; a later round names itself and says what became of the last | *Draft is what posts beside what you decide*; `primaryAction`, `sinceRound` |
 | 21 Nov 2026 | A session's answer follows the contract or is kept only as an unparsed message | `docs/answer-contract.md` |
+| 21 Nov 2026 | A suggestion is accepted through the page's own control and stays the developer's decision; `prompted_by` names the reply | *Ask this review*; `accepting`, `addFinding` |
 | 21 Nov 2026 | Queue and Reviews are one Pull requests list with a preview; the bottom line is one helper | *The application shell*; `pages/index.vue`, `bottomLine` |
 | 21 Nov 2026 | Overview is three pages chosen from the record; outcomes are grouped once, each with its basis | `overview.ts`, `sinceYouPosted` |
 | 15 Nov 2026 | Review Desk never starts, resumes or drives Claude itself; without Allele the conversation is one way | *The application shell*; S11 |

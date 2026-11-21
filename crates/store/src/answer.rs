@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::error::{Result, StoreError};
-use crate::model::{string_enum, ReviewLayerName, Severity};
+use crate::model::{string_enum, FindingDecision, ReviewLayerName, Severity};
 
 /// The longest a headline may be, in characters.
 pub const HEADLINE_MAX: usize = 140;
@@ -305,6 +305,62 @@ impl Suggestion {
             Suggestion::SetAside { .. } => SuggestionType::SetAside,
             Suggestion::DraftReply { .. } => SuggestionType::DraftReply,
             Suggestion::FollowUp { .. } => SuggestionType::FollowUp,
+        }
+    }
+
+    /// The finding it is about, when it names one.
+    pub fn finding(&self) -> Option<i64> {
+        match self {
+            Suggestion::Regrade { finding, .. }
+            | Suggestion::SetAside { finding, .. }
+            | Suggestion::DraftReply { finding, .. } => Some(finding.0),
+            Suggestion::AddToDraft { finding, .. } => finding.map(|n| n.0),
+            Suggestion::NewFinding { .. } | Suggestion::FollowUp { .. } => None,
+        }
+    }
+}
+
+/// **What accepting a suggestion writes, and through which call** — DEV-1334.
+///
+/// Every arm is something the page already lets the developer do, so an Accept is a
+/// shortcut to a control and never a second way to change the record. There is no arm that
+/// signs off, approves or posts, and `crates/store/tests/suggestion_answers.rs` holds every
+/// type in [`SuggestionType::ALL`] to that.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Accepting {
+    /// Adds a finding to *To post*, through [`crate::Store::add_finding_from_conversation`]:
+    /// the one developer-side call that adds a finding, which *Turn into a finding* uses too.
+    AddsAFinding,
+    /// One of these decisions on the finding the suggestion names, through
+    /// [`crate::Store::decide_finding_prompted`] — the call behind the page's own buttons.
+    Decides(&'static [FindingDecision]),
+    /// Fills the ask box, and writes nothing. Only the developer sends.
+    FillsTheAskBox,
+}
+
+impl SuggestionType {
+    /// What accepting a suggestion of this type writes. See [`Accepting`].
+    ///
+    /// | Type | Accepting it | Key on the page |
+    /// | -- | -- | -- |
+    /// | `new_finding` | adds a finding | — |
+    /// | `regrade` | `regrade` | `G` |
+    /// | `add_to_draft` | `rewrite` | `E` |
+    /// | `set_aside` | `cut` | `S` |
+    /// | `draft_reply` | `raise_again`, `accept_reason` or `withdraw`, sent from Replies | `R` `A` `W` |
+    /// | `follow_up` | fills the ask box | — |
+    pub fn accepting(self) -> Accepting {
+        match self {
+            SuggestionType::NewFinding => Accepting::AddsAFinding,
+            SuggestionType::Regrade => Accepting::Decides(&[FindingDecision::Regrade]),
+            SuggestionType::AddToDraft => Accepting::Decides(&[FindingDecision::Rewrite]),
+            SuggestionType::SetAside => Accepting::Decides(&[FindingDecision::Cut]),
+            SuggestionType::DraftReply => Accepting::Decides(&[
+                FindingDecision::RaiseAgain,
+                FindingDecision::AcceptReason,
+                FindingDecision::Withdraw,
+            ]),
+            SuggestionType::FollowUp => Accepting::FillsTheAskBox,
         }
     }
 }

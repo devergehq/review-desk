@@ -416,14 +416,51 @@ pub fn message(message: &review_desk_store::ReviewMessage) -> Value {
         "parsed": message.parsed(),
         "answer": message.answer,
         "superseded_by": message.superseded_by,
+        // DEV-1334: filled in by `message_list`, which reads them once for the review. A
+        // message served on its own has just been written, so nothing has answered it.
+        "suggestion_answers": [],
     })
 }
 
 /// `GET /reviews/{id}/messages`.
-pub fn message_list(review_id: i64, messages: &[review_desk_store::ReviewMessage]) -> Value {
+pub fn message_list(
+    review_id: i64,
+    messages: &[review_desk_store::ReviewMessage],
+    answers: &[review_desk_store::SuggestionAnswer],
+) -> Value {
     json!({
         "review_id": review_id,
-        "messages": messages.iter().map(message).collect::<Vec<_>>(),
+        "messages": messages
+            .iter()
+            .map(|one| {
+                let mut drawn = message(one);
+                // DEV-1334: what the developer made of this reply's suggestions, and whether
+                // the whole answer was turned into a finding. Empty on every message nobody
+                // has answered, and on every developer's message.
+                drawn["suggestion_answers"] = Value::Array(
+                    answers
+                        .iter()
+                        .filter(|answer| answer.message == one.seq)
+                        .map(suggestion_answer)
+                        .collect(),
+                );
+                drawn
+            })
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// One answer the developer gave to a suggestion. DEV-1334.
+pub fn suggestion_answer(answer: &review_desk_store::SuggestionAnswer) -> Value {
+    json!({
+        "message": answer.message,
+        "suggestion": answer.suggestion,
+        "verdict": answer.verdict.as_str(),
+        "reason": answer.reason,
+        "finding_seq": answer.finding_seq,
+        "finding_key": answer.finding_seq.map(finding_key),
+        "outcome_id": answer.outcome_id,
+        "answered_at": rfc3339(answer.answered_at),
     })
 }
 
@@ -646,6 +683,9 @@ pub fn finding(finding: &Finding) -> Value {
         "introduced_by_commit": finding.introduced_by_commit,
         "introduced_by_seq": finding.introduced_by_seq,
         "introduced_by_key": finding.introduced_by_seq.map(finding_key),
+        // DEV-1334: the reply that prompted the developer to add this finding, by its
+        // number on the review. Null on every finding a session raised.
+        "prompted_by": finding.prompted_by,
     })
 }
 

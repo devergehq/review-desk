@@ -84,6 +84,7 @@ describe('whether a message has reached the session', () => {
     parsed: false,
     answer: null,
     superseded_by: null,
+    suggestion_answers: [],
   }
   const now = new Date('2026-10-30T11:05:00Z')
 
