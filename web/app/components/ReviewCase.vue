@@ -319,26 +319,26 @@ function headline(brief: Brief): string {
               :bands="CASE_BANDS"
             />
             <div class="bands">
-            <CaseWrong
-              :detail="data"
-              :brief="data.brief"
-            />
-            <CaseCriteria
-              :review-id="data.review.id"
-              :criteria="data.criteria ?? []"
-            />
-            <CaseChosen
-              :brief="data.brief"
-              :layers="data.layers"
-            />
-            <CaseBuilt
-              :detail="data"
-              :brief="data.brief"
-            />
-            <CaseNotVerified
-              :not-checked="data.not_checked"
-              :layers="data.layers"
-            />
+              <CaseWrong
+                :detail="data"
+                :brief="data.brief"
+              />
+              <CaseCriteria
+                :review-id="data.review.id"
+                :criteria="data.criteria ?? []"
+              />
+              <CaseChosen
+                :brief="data.brief"
+                :layers="data.layers"
+              />
+              <CaseBuilt
+                :detail="data"
+                :brief="data.brief"
+              />
+              <CaseNotVerified
+                :not-checked="data.not_checked"
+                :layers="data.layers"
+              />
             </div>
           </div>
         </div>
