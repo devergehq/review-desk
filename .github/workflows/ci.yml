@@ -60,6 +60,14 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features
 
+      # **The build that ships, tested as it ships** — DEV-1346. `--all-features` turns on
+      # `e2e`, which compiles out the tests that the environment cannot choose the sign-in
+      # token, so they run here without it.
+      - name: The ordinary build takes no sign-in token from the environment
+        run: |
+          cargo test -p review-desk-server --lib developer
+          cargo test -p review-desk --test serve
+
       # The job above has no Node, so what it just built and tested is the no-front-end
       # binary. This asserts that deliberately, rather than leaving it as a property of
       # which tools the runner happens to have.

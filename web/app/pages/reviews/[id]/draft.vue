@@ -93,6 +93,40 @@ const notice = ref<DeskNotice | null>(null)
  * all, and reads nothing declared after it.
  */
 const ticketingRest = ref(false)
+
+/*
+ * **A draft re-drawn under the developer says so** — DEV-1346, found by its self-review.
+ *
+ * The page re-reads every open screen after any write, including one made from another card
+ * on this page — asking the session something, say. If the session rewrote the draft in the
+ * meantime, the new text and its `shown` replace the old, and a sign-off then binds to the
+ * new text. That is correct, and the developer has to know it happened: so the `shown` the
+ * page last drew is kept, and a new one arriving *outside this page's own writes* puts up the
+ * same sentence a refused sign-off does. This page's writes are the ones with `working` set;
+ * their re-read is the developer's own doing and says what it did in its own notice.
+ */
+const lastShown = ref<string | null>(null)
+watch(
+  () => detail.data.value,
+  (data) => {
+    if (!data) return
+    const drawn = [
+      data.draft.review_id,
+      data.shown.draft_rev,
+      data.shown.body_sha256,
+      data.shown.threads_sha256,
+    ].join(':')
+    const before = lastShown.value
+    lastShown.value = drawn
+    if (before === null || before === drawn || working.value) return
+    /* Another review in the same page instance is a navigation, not a change under anyone. */
+    if (before.split(':')[0] !== String(data.draft.review_id)) return
+    notice.value = {
+      tone: 'problem',
+      text: 'The draft changed while you were reading it · review the change.',
+    }
+  },
+)
 const ticketNote = ref('')
 
 /**
@@ -538,11 +572,10 @@ async function save() {
 
 /*
  * **Every sign-off on this page sends `data.shown`: the hashes of the document on screen** —
- * DEV-1346. The page reads the draft once when it opens and again only after the developer's
- * own write, or on `PostingWatch`'s timer once the draft is approved and the store refuses
- * every edit to it — so the document on screen is the one that was read, and a session that
- * rewrites the draft meanwhile is refused at the click. The refusal reads the page again
- * and says "the draft changed while you were reading it · review the change".
+ * DEV-1346. A session that rewrites the draft while it is open is refused at the click, and
+ * the refusal reads the page again and says "the draft changed while you were reading it ·
+ * review the change". A re-read for any other reason that brings a rewritten draft says the
+ * same — see `lastShown` above — so the text never changes under the developer unannounced.
  */
 async function approve() {
   const data = detail.data.value

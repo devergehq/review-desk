@@ -25,6 +25,8 @@ let database: string
 let reviewId: number
 /* A second review, for the browser with no cookie: the first is signed off by then. */
 let anotherId: number
+/* A third, for a draft re-drawn by a re-read the developer did not ask for. */
+let redrawnId: number
 
 function putDraft(text: string, review: number = reviewId) {
   const path = join(directory, `shown-body-${review}-${Date.now()}.json`)
@@ -50,6 +52,8 @@ test.beforeAll(async () => {
   putDraft('The draft the developer opened.')
   anotherId = openReview('735', 'b8c9d01')
   putDraft('A draft for the browser that has no cookie.', anotherId)
+  redrawnId = openReview('736', 'c9d0e12')
+  putDraft('The draft as it was when the page opened.', redrawnId)
   serving = await serve(database)
 })
 
@@ -95,4 +99,21 @@ test('a browser that never signed in cannot sign off', async ({ page, context })
   await page.getByRole('button', { name: 'Send back', exact: true }).click()
 
   await expect(page.getByText(/only the developer can do this/i)).toBeVisible()
+})
+
+test('a draft rewritten and then re-read says so before anything is signed off', async ({ page }) => {
+  await page.goto(`${serving.url}reviews/${redrawnId}/draft`)
+  await expect(page.getByText('The draft as it was when the page opened.')).toBeVisible()
+
+  putDraft('Rewritten behind the page.', redrawnId)
+
+  /* Any write re-reads every open screen: here, asking the session something. */
+  await page.getByText('Ask the agent about Draft').click()
+  await page.getByPlaceholder('Ask why, or ask for rework').fill('Why F1?')
+  await page.getByRole('button', { name: 'Ask', exact: true }).click()
+
+  await expect(page.getByText('Rewritten behind the page.')).toBeVisible()
+  await expect(
+    page.getByText('The draft changed while you were reading it · review the change.'),
+  ).toBeVisible()
 })

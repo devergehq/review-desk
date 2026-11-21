@@ -2171,9 +2171,15 @@ pub struct Draft {
     pub rev: i64,
     /// What the developer approved: the draft as it stood when the sign-off was written.
     ///
-    /// `Some` exactly while the draft is approved or posted. **This is what a post is held
-    /// to** (DEV-1347): a draft whose [`crate::Store::draft_shown`] no longer equals this has
-    /// changed since it was signed off, whatever its status says.
+    /// `Some` while the draft is approved or posted, **except on a sign-off given before
+    /// migration 24**, which recorded nothing it was of and reads `None`. SQLite has no
+    /// SHA-256 to backfill it with. Such a sign-off is of no recorded draft, so a post should
+    /// refuse it rather than guess; the developer approving it again, from the page, records
+    /// it — see [`crate::Store::approve_draft`].
+    ///
+    /// **This is what a post is held to** (DEV-1347): a draft whose
+    /// [`crate::Store::draft_shown`] no longer equals this has changed since it was signed
+    /// off, whatever its status says.
     pub approved_shown: Option<DraftShown>,
 }
 
@@ -2188,8 +2194,10 @@ pub struct Draft {
 /// Three values rather than one, because each catches a different move. `body_sha256` is
 /// the body as it posts. `threads_sha256` is the comments that post beside it, which are
 /// composed from the findings as well as the blocks and so can change without the body
-/// changing. `rev` is the compare-and-set: a write that left both hashes as they were — the
-/// same body written again — still means the draft was written under the developer.
+/// changing. `rev` is the compare-and-set, and it moves on any write of a block: a session's
+/// `put_draft` rewrites every block, so it moves `rev` even when the words come out the same,
+/// and the draft still counts as written under the developer. The body's own trigger counts
+/// only a body that changed — migration 24.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DraftShown {
     /// SHA-256 of the body's UTF-8 bytes, lower-case hex.

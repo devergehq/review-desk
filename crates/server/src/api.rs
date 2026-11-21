@@ -1441,18 +1441,20 @@ impl Api {
         // a row in the body's index and a comment on the code, so the page cannot show what
         // posts from the body alone — DEV-929. They are composed from the same blocks, so
         // cutting a finding takes its row and its thread together.
-        let threads: Vec<Value> = self
-            .records
-            .draft_threads(review_id)?
-            .iter()
-            .map(wire::draft_thread)
-            .collect();
+        let composed = self.records.draft_threads(review_id)?;
+        let threads: Vec<Value> = composed.iter().map(wire::draft_thread).collect();
 
         Ok(json!({
             "draft": wire::draft(draft),
             // **What the sign-off endpoints take back** — DEV-1346. The page holds the
             // document it rendered and sends this from it, so an act is on what was shown.
-            "shown": wire::draft_shown(&self.records.draft_shown(review_id)?),
+            //
+            // **Hashed from the draft and threads in this document, not read again.** Each
+            // read here is its own call, so a session's write can land between them; a
+            // `shown` read separately would then vouch for a draft this document does not
+            // carry, and an approval would match it. From the served values, a mixed read
+            // gives a `shown` no state of the record matches, which fails closed as a 409.
+            "shown": wire::draft_shown(&review_desk_store::shown_of(draft, &composed)),
             "review": wire::review(&review),
             "lint": wire::draft_lint(&draft.lint),
             "sections": sections,

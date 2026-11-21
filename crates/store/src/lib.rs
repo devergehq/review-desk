@@ -47,7 +47,7 @@ pub use crate::entities::provenance::{
     FileCheck, NewAcceptanceCriterion, NewDescriptionLintResult, NewFileChange, NewReviewSource,
     ReviewProvenance, ReviewSource, SourceKind,
 };
-pub use crate::entities::shown::{brief_hash, sha256_hex};
+pub use crate::entities::shown::{brief_hash, sha256_hex, shown_of};
 pub use crate::error::{Result, StoreError};
 pub use crate::migrations::newest_version;
 pub use crate::model::{

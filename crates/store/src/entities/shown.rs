@@ -12,7 +12,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::error::{Result, StoreError};
-use crate::model::{Brief, DraftShown};
+use crate::model::{Brief, Draft, DraftShown, DraftThread};
 use crate::Store;
 
 /// SHA-256 of `bytes`, lower-case hex.
@@ -38,18 +38,33 @@ fn hashed_json<T: serde::Serialize>(value: &T) -> String {
     sha256_hex(&serde_json::to_vec(value).unwrap_or_default())
 }
 
+/// What a page that serves this draft and these threads is showing.
+///
+/// **Computed from the values being served, never read again.** A page that serves a draft
+/// it read in one call and a `shown` it read in another can be handed the hashes of a draft
+/// written between the two — body A on screen, B's `shown` in hand — and the approval then
+/// matches B. Taken from what is served, a mixed read can only produce a `shown` that matches
+/// no state of the record, so it fails closed as a `409`. Found by the self-review of
+/// DEV-1346, with a probe that approved a body the page never drew.
+pub fn shown_of(draft: &Draft, threads: &[DraftThread]) -> DraftShown {
+    DraftShown {
+        body_sha256: sha256_hex(draft.body.as_bytes()),
+        threads_sha256: hashed_json(&threads),
+        draft_rev: draft.rev,
+    }
+}
+
 impl Store {
     /// What a developer reading this draft now is being shown.
     ///
     /// `threads_sha256` is taken over the threads as [`Store::draft_threads`] composes
-    /// them, which is what posts beside the body.
+    /// them, which is what posts beside the body. **For a page, use [`shown_of`] over the
+    /// draft and threads actually served**; this reads both again, and is for the store's
+    /// own comparison inside a transaction, where nothing can write between the two reads.
     pub fn draft_shown(&self, review_id: i64) -> Result<DraftShown> {
         let draft = self.get_draft(review_id)?;
-        Ok(DraftShown {
-            body_sha256: sha256_hex(draft.body.as_bytes()),
-            threads_sha256: hashed_json(&self.draft_threads(review_id)?),
-            draft_rev: draft.rev,
-        })
+        let threads = self.draft_threads(review_id)?;
+        Ok(shown_of(&draft, &threads))
     }
 
     /// The hash of the brief a developer reading it now is being shown.

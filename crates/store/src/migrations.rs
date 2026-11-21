@@ -1870,7 +1870,11 @@ CREATE TABLE fresh_session_requests (
 -- A column every writer had to remember to bump would be a column some writer forgets: the
 -- body is written by `put_draft`, by the composition, by a decision and by the hand-over's
 -- repair, and its blocks by three more. A trigger sees all of them, including the next one.
--- It counts writes that change something; writing the same body again is not a new draft.
+--
+-- The body's trigger counts a body that changed; the blocks' count any insert or delete and
+-- any update of what posts. So a session's `put_draft`, which deletes and re-inserts every
+-- block, moves `rev` even when its words come out the same: the draft was written under the
+-- developer, which is what `rev` is for. The hashes are what say whether the words moved.
 --
 -- **The approved columns record what was approved**, so a later post can refuse a draft
 -- that moved after it was signed off (DEV-1347). They are the hashes of the draft *as
