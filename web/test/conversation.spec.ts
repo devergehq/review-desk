@@ -150,7 +150,7 @@ describe('one way', () => {
     const reference = referenceFor(41, 'code_review', { tab: 'findings', finding: 9 }, [])
     expect(reference).toContain('Review Desk review 41, about F9.')
     expect(reference).toContain('review-desk message reply --review 41 --step code_review --answer -')
-    expect(reference).toContain('README.md, “Talking to the review’s session”')
+    expect(reference).toContain('README.md, "Talking to the review\'s session"')
     expect(reference).not.toContain('--to')
     expect(reference).not.toContain('The question:')
   })

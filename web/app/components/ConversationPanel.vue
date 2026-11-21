@@ -123,6 +123,8 @@ async function copyReference(again: ReviewMessage | null = null): Promise<void> 
   try {
     await navigator.clipboard.writeText(reference)
     said.value = `Copied a reference to ${aboutLabel(about.value, props.detail.findings)}. Paste it into your session.`
+    /* It is on the clipboard now, as a sent question leaves the box: the next copy starts clean. */
+    if (!again) text.value = ''
   }
   catch {
     said.value = null
@@ -338,10 +340,18 @@ const headingId = useId()
         </p>
         <p
           v-if="text.trim()"
-          class="rd-recorded one-way-question"
+          class="one-way-question"
           data-testid="one-way-question"
         >
-          {{ text }}
+          <span class="rd-recorded">{{ text }}</span>
+          <button
+            type="button"
+            class="unpin"
+            aria-label="Clear this question"
+            @click="text = ''"
+          >
+            ×
+          </button>
         </p>
         <div class="field-foot">
           <span class="rd-meta">Copy a reference to {{ aboutLabel(about, detail.findings) }} for your session</span>
@@ -681,6 +691,10 @@ const headingId = useId()
 }
 
 .one-way-question {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0;
   overflow-wrap: anywhere;
 }

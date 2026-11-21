@@ -288,9 +288,12 @@ export function suggestionLine(suggestion: Suggestion): { line: string, why: str
 
 /* ---------------------------------- One way ------------------------------------ */
 
-/** Where the reply command and its contract are written up, for a session reading a reference. */
+/**
+ * Where the reply command and its contract are written up, for a session reading a reference.
+ * Straight quotes, as the README's heading has them, so a session can search for it verbatim.
+ */
 export const CONTRACT_POINTER
-  = 'README.md, “Talking to the review’s session”, and docs/answer-contract.md'
+  = 'README.md, "Talking to the review\'s session", and docs/answer-contract.md'
 
 /**
  * **What *Copy a reference* puts on the clipboard**, for the developer to paste into their own

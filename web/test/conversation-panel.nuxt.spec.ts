@@ -157,22 +157,34 @@ describe('your own session, one way', () => {
     const page = await panel('findings', `/reviews/${REVIEW}/findings?finding=F1`)
     useAskBox(REVIEW).fill('And the CSV download?')
     await settle(page)
+    expect(page.find('[data-testid="one-way-question"]').text()).toContain('And the CSV download?')
 
     const copy = page.findAll('button').find(one => one.text() === 'Copy a reference')!
     await copy.trigger('click')
     await page.find('form').trigger('submit')
     await settle(page)
 
-    expect(page.find('[data-testid="one-way-question"]').text()).toBe('And the CSV download?')
     expect(clipboard).toHaveLength(1)
     expect(clipboard[0]).toContain(`Review Desk review ${REVIEW}, about F1 · app/Reporting/ExportContext.php:44.`)
     expect(clipboard[0]).toContain('The question: And the CSV download?')
+    /* Copied, so the box is clear and the next reference carries no stale question. */
+    expect(page.find('[data-testid="one-way-question"]').exists()).toBe(false)
     expect(clipboard[0]).toContain(`review-desk message reply --review ${REVIEW} --step code_review`)
-    expect(clipboard[0]).toContain('README.md, “Talking to the review’s session”')
+    expect(clipboard[0]).toContain('README.md, "Talking to the review\'s session"')
 
     const kept = useReviewDesk().messages(REVIEW)
     await kept.refresh()
     expect(kept.data.value!.messages.map(one => one.seq)).toEqual([2])
+  })
+
+  it('clears a held question with its ×', async () => {
+    await resetDesk({ messages: [WRITTEN] })
+    const page = await panel()
+    useAskBox(REVIEW).fill('And the CSV download?')
+    await settle(page)
+    await page.find('[aria-label="Clear this question"]').trigger('click')
+    await settle(page)
+    expect(page.find('[data-testid="one-way-question"]').exists()).toBe(false)
   })
 
   it('draws the reference to select when the clipboard refuses it', async () => {

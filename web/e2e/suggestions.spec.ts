@@ -123,7 +123,7 @@ test('a follow-up fills the ask box and sends nothing', async ({ page }) => {
    * Copy a reference carries to the developer's own session.
    */
   await expect(panel).toHaveAttribute('data-mode', 'one_way')
-  await expect(panel.getByTestId('one-way-question')).toHaveText('Does the CSV download use a third path?')
+  await expect(panel.getByTestId('one-way-question')).toContainText('Does the CSV download use a third path?')
   await expect(panel.getByText('Nothing is sent until you ask.')).toBeVisible()
   const listed = JSON.parse(cli(database, ['message', 'list', '--review', String(reviewId), '--json']))
   expect(JSON.stringify(listed)).not.toContain('"author":"developer"')
