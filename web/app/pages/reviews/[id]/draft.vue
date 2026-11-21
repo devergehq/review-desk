@@ -146,7 +146,14 @@ watch(
     if (before === null || before === drawn || movingTheDraft.value) return
     /* Another review in the same page instance is a navigation, not a change under anyone. */
     if (before.split(':')[0] !== String(data.draft.review_id)) return
-    changedUnderneath = true
+    /*
+     * Remembered only while one of this page's own writes is in flight, because only then is
+     * a `said()` coming to replace this notice. A re-draw from another card or from
+     * `PostingWatch`'s timer has no `said()` after it, and a flag left set would put this
+     * sentence in front of the developer's next, unrelated success. Round 3 of DEV-1346's
+     * self-review.
+     */
+    changedUnderneath = working.value
     notice.value = { tone: 'problem', text: CHANGED_UNDERNEATH }
   },
 )
