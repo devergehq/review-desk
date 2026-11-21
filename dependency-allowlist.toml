@@ -74,7 +74,12 @@ advisory = "GHSA-3g3m-2fjr-6pw4"
 dependency = "glob"
 ecosystem = "npm"
 reason = """
-@vue/test-utils > js-beautify > glob 13.0.7. Needs >=14.0.2, a major. js-beautify 2.0.3 is its newest release and declares glob ^13.0.6, so no in-range update reaches it. Test-only: @vue/test-utils is a devDependency and vitest is the only thing that loads it, so the AbortSignal cancellation bypass has no path into the product. Verified absent from the static build. Decided by Patrick on 22 November 2026."""
+@vue/test-utils > js-beautify > glob 13.0.7. Needs >=14.0.2, a major. js-beautify 2.0.3 is \
+its newest release and declares glob ^13.0.6, so no in-range update reaches it. Test-only: \
+@vue/test-utils is a devDependency and vitest is the only thing that loads it, so the \
+AbortSignal cancellation bypass has no path into the product. \
+Verified absent from the static build. Decided by Patrick on 22 November 2026.\
+"""
 decided_by = "Patrick"
 look_again = 2027-01-21
 
@@ -83,6 +88,15 @@ advisory = "GHSA-g3hv-75wg-m249"
 dependency = "minimatch"
 ecosystem = "npm"
 reason = """
-minimatch 10.2.6 has three holders, every one at its newest release: nuxt > nitropack > archiver 8.0.0 > readdir-glob 3.0.0 (archiver declares readdir-glob ^3; readdir-glob 4.0.0 has minimatch 11 but nothing takes it), and @vue/test-utils > js-beautify 2.0.3 twice, via editorconfig ^3.0.2 and via glob ^13.0.6. Needs >=11.0.1, a major. Build-time and test-time only: the globparts denial of service needs a hostile pattern, and the only patterns it sees are this repository's own build and editor configuration. Clearing it needs both archiver and js-beautify to move. Verified absent from the static build. Decided by Patrick on 22 November 2026."""
+minimatch 10.2.6 comes in by three paths, each through a package at its newest release \
+(archiver 8.0.0, js-beautify 2.0.3): nuxt > nitropack > archiver > readdir-glob 3.0.0, \
+since archiver declares readdir-glob ^3 and nothing in this tree takes readdir-glob 4.0.0, \
+which moved to minimatch 11; and @vue/test-utils > js-beautify twice, via editorconfig \
+^3.0.2 and via glob ^13.0.6. Needs >=11.0.1, a major. Build-time and test-time only: the \
+globparts denial of service needs a hostile pattern, and the only patterns it sees are this \
+repository's own build and editor configuration. Clearing it needs both archiver and \
+js-beautify to move. \
+Verified absent from the static build. Decided by Patrick on 22 November 2026.\
+"""
 decided_by = "Patrick"
 look_again = 2027-01-21
