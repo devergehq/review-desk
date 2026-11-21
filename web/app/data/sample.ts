@@ -45,6 +45,7 @@ import {
 } from '~/utils/houseStyle'
 import { count, reviewWorkInWords, reviewWorkIsOneThing } from '~/utils/format'
 import { nothingMoved } from '~/utils/rounds'
+import type { ReviewTab } from '~/utils/reviewTabs'
 import type {
   ReviewLayerName,
   ReviewMessage,
@@ -1602,6 +1603,21 @@ function sendBackDraft(id: number, note: string): DraftDetail {
   return detail
 }
 
+/**
+ * The tab each step now lives on, as the store's `ReviewTab::for_step` says. Sample mode
+ * stands in for the server, so it keeps the server's default; the page itself never works
+ * this out — it reads `about` off the message.
+ */
+const TAB_OF_STEP: Record<ReviewLayerName, ReviewTab> = {
+  lint: 'understanding',
+  understand: 'understanding',
+  alternatives: 'understanding',
+  solution_map: 'understanding',
+  code_review: 'findings',
+  draft: 'draft',
+  harvest: 'replies',
+}
+
 /** The review's conversation, oldest first. */
 function messagesOf(id: number): ReviewMessage[] {
   return source.messages.filter(message => message.review_id === id)
@@ -1633,6 +1649,11 @@ function addMessage(
     created_at: nowIso(),
     read_at: null,
     read_by_session: null,
+    // The server's default when the page sends no `about`: the tab the step now lives on.
+    about: { tab: TAB_OF_STEP[step], finding: null },
+    parsed: false,
+    answer: null,
+    superseded_by: null,
   }
   source.messages.push(message)
   return message

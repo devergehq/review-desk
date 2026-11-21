@@ -16,8 +16,8 @@
 //! methods and no write in it.
 
 use review_desk_store::{
-    Actor, Decision, Disposition, DraftSectionKind, DraftStatus, FindingDecision, NewDraft,
-    NewDraftSection, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts, ReviewLayerName,
+    About, Actor, Decision, Disposition, DraftSectionKind, DraftStatus, FindingDecision, NewDraft,
+    NewDraftSection, NewOutcome, OutcomeKind, ReviewEvent, ReviewFacts, ReviewLayerName, ReviewTab,
     ReviewsShown, RuleStage, Severity, DEVELOPER_DECISIONS,
 };
 use serde::Deserialize;
@@ -1356,7 +1356,20 @@ impl Api {
         let words = trimmed(Some(request.body)).ok_or_else(|| {
             ApiError::invalid_value("body", "an empty message asks nothing", "what to ask")
         })?;
-        let message = self.records.ask_session(review_id, step, &words)?;
+        let about = request
+            .about
+            .map(|about| {
+                about
+                    .tab
+                    .parse::<ReviewTab>()
+                    .map(|tab| About {
+                        tab,
+                        finding: about.finding,
+                    })
+                    .map_err(ApiError::from)
+            })
+            .transpose()?;
+        let message = self.records.ask_session(review_id, step, about, &words)?;
         Ok((201, wire::message(&message)))
     }
 
@@ -2241,6 +2254,18 @@ struct ApproveDraftRequest {
 struct AskSessionRequest {
     step: String,
     body: String,
+    /// The tab the ask is about, and a finding on it. Left out, the step's tab.
+    #[serde(default)]
+    about: Option<AskAboutRequest>,
+}
+
+/// `MessageAbout` from the contract, as the page sends it with an ask.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AskAboutRequest {
+    tab: String,
+    #[serde(default)]
+    finding: Option<i64>,
 }
 
 /// `SendBackDraftRequest` from the contract.

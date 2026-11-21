@@ -409,6 +409,13 @@ pub fn message(message: &review_desk_store::ReviewMessage) -> Value {
         "created_at": rfc3339(message.created_at),
         "read_at": rfc3339_or_null(message.read_at),
         "read_by_session": message.read_by_session,
+        "about": message.about,
+        // DEV-1332: the reply as the answer contract parsed it, or null when it did not
+        // parse or is not a reply. `body` above is the raw text either way, and the page
+        // never re-validates or repairs `answer`.
+        "parsed": message.parsed(),
+        "answer": message.answer,
+        "superseded_by": message.superseded_by,
     })
 }
 

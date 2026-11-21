@@ -550,9 +550,10 @@ impl Records {
         &self,
         review_id: i64,
         step: ReviewLayerName,
+        about: Option<review_desk_store::About>,
         body: &str,
     ) -> Result<ReviewMessage, ApiError> {
-        self.with(|store| store.ask_session(review_id, step, body))
+        self.with(|store| store.ask_session_about(review_id, step, about, body))
     }
 
     /// The blocks the draft body is composed of, in order.

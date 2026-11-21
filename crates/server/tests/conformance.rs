@@ -970,9 +970,56 @@ fn the_conversation_validates_whole() {
         )
         .expect("the session replies");
 
+    // DEV-1332: an ask about a finding, and an answer in the contract's shape to it.
+    let about = harness.api(
+        "POST",
+        &path,
+        Some(r#"{"step":"code_review","body":"Web too?","about":{"tab":"findings","finding":9}}"#),
+    );
+    assert_eq!(about.status, 201, "{}", about.text());
+    assert_valid("ReviewMessage", &about.json());
+    assert_eq!(about.json()["about"]["finding"], 9);
+    harness
+        .store
+        .answer_from_session(
+            seeded.review_id,
+            review_desk_store::ReviewLayerName::CodeReview,
+            r#"{"kind":"answer","headline":"Yes.","cites":["F9"],
+                "suggests":[{"type":"set_aside","finding":"F9","why":"Fixed in 3a1b."}]}"#,
+            Some(about.json()["seq"].as_i64().unwrap()),
+        )
+        .expect("the session answers in the contract's shape");
+
     let list = harness.api("GET", &path, None);
     assert_eq!(list.status, 200);
     assert_valid("MessageList", &list.json());
+    let messages = list.json()["messages"].as_array().unwrap().clone();
+    let last = messages.last().unwrap();
+    assert_eq!(last["parsed"], true);
+    assert_eq!(last["answer"]["suggests"][0]["type"], "set_aside");
+    assert!(
+        last["body"].as_str().unwrap().contains("set_aside"),
+        "the raw body too"
+    );
+    assert_eq!(
+        messages[1]["parsed"], false,
+        "the prose reply is not parsed"
+    );
+}
+
+#[test]
+fn an_ask_about_a_finding_off_its_tab_is_refused() {
+    let harness = common::start_with_no_github();
+    let seeded = common::seed(&harness.store);
+    let path = format!("/reviews/{}/messages", seeded.review_id);
+    let refused = harness.api(
+        "POST",
+        &path,
+        Some(r#"{"step":"draft","body":"Hm?","about":{"tab":"overview","finding":9}}"#),
+    );
+    assert_eq!(refused.status, 400, "{}", refused.text());
+    assert_eq!(refused.json()["code"], "invalid_value");
+    assert!(harness.store.messages(seeded.review_id).unwrap().is_empty());
 }
 
 #[test]
