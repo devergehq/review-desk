@@ -97,9 +97,16 @@ for (const width of [2560, 1920, 1600, 1280] as const) {
 
         /*
          * **The bands fill and the prose does not** (DEV-1372). However wide the window, no
-         * paragraph on a document's page runs its text wider than the larger of the two
-         * measures, read as the browser resolves them for that paragraph's own face and size:
-         * the page's copy stops at `--rd-measure`, a session's at `--rd-measure-recorded`.
+         * paragraph on a document's page — a `<p>`, or an `.rd-note` a flex column has made a
+         * block of — runs its text wider than the larger of the two measures, read as the
+         * browser resolves them for that paragraph's own face and size.
+         *
+         * **The bound is the looser of the two, on purpose.** The page's copy stops at
+         * `--rd-measure` (720px) and a session's at `--rd-measure-recorded` (about 746px at
+         * the body size), and which one a paragraph is held to is its stylesheet's choice,
+         * not something the DOM says. So page copy could run 26px past its own measure and
+         * pass; what this catches is a paragraph with no measure at all, which runs to the
+         * band — 1,000px and more at 2,560.
          *
          * **What is measured is the text, not the box.** A row of a key and a title, or a
          * line of figures, is a `<p>` whose box takes the band as a rule does, and that is
@@ -110,7 +117,7 @@ for (const width of [2560, 1920, 1600, 1280] as const) {
          */
         if (DOCUMENTS.includes(one.name)) {
           const wider = await page.evaluate(() =>
-            [...document.querySelectorAll<HTMLElement>('main p')]
+            [...document.querySelectorAll<HTMLElement>('main p, main .rd-note')]
               .filter(el => el.offsetParent !== null && !el.closest('[data-testid="review-header"]'))
               .map((el) => {
                 const probe = document.createElement('span')
