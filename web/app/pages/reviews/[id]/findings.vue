@@ -99,14 +99,6 @@ import { commitLabel, movesSince, nothingMoved } from '~/utils/rounds'
  * sentence the posted review carries. Losing it with the page it was on would have been the
  * quiet kind of regression.
  */
-/*
- * **The page is wider than the rest of the app**, which the layout reads off this. Patrick,
- * 16 October 2026: the bench leaves the 1,240px shell for the window, capped near 1,600px,
- * with the extra going to the list and the hunk — the prose fields keep their own measure,
- * so what grows is the two columns that were being squeezed and not the reading.
- */
-definePageMeta({ wide: true })
-
 const route = useRoute()
 const desk = useReviewDesk()
 

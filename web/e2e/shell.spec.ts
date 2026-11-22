@@ -4,8 +4,9 @@ import { readAddresses } from './harness'
 
 /*
  * **The shell, measured in a browser** — DEV-1323's criteria that only a layout engine can
- * answer: every existing page renders inside the three columns at 1,600 and at 1,280 wide
- * without scrolling sideways, no element but the wordmark computes a serif face, and under
+ * answer: every existing page renders inside the three columns at 2,560, 1,920, 1,600 and
+ * 1,280 wide without scrolling sideways, and fills the window at every one of them
+ * (DEV-1372), no element but the wordmark computes a serif face, and under
  * 700px the sidebar is behind a menu button and the conversation is a sheet behind *Ask*
  * (DEV-1336). Since DEV-1333 the column holds *Ask this review*, under the page between 700
  * and 1,100.
@@ -49,7 +50,10 @@ async function openOnAPhone(page: Page, path: string) {
 const sideways = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
 
-for (const width of [1600, 1280] as const) {
+/** The pages whose prose is read down, and so must stop at its measure however wide the window. */
+const DOCUMENTS = ['overview', 'the case', 'what happened']
+
+for (const width of [2560, 1920, 1600, 1280] as const) {
   test.describe(`at ${width} wide`, () => {
     test.use({ viewport: { width, height: 900 } })
 
@@ -61,15 +65,80 @@ for (const width of [1600, 1280] as const) {
         expect(sidebar!.x).toBe(0)
         expect(Math.round(sidebar!.width)).toBe(232)
 
+        /*
+         * **The shell fills the window** (DEV-1372): no outer cap and no centring, so the
+         * main column is the window less the sidebar and, on a review, the conversation —
+         * on a document's page as much as a workbench's. 1,308px at 1,920 on a review,
+         * 2,328px at 2,560 on Rules.
+         */
+        const main = await page.locator('main#main').boundingBox()
+        expect(main!.x, 'the main column starts at the sidebar').toBe(232)
+        expect(Math.round(main!.width), 'the main column takes everything between')
+          .toBe(width - 232 - (one.review ? 380 : 0))
+
         const conversation = page.locator('.shell-conversation')
         if (one.review) {
           await expect(conversation).toBeVisible()
-          expect(Math.round((await conversation.boundingBox())!.width)).toBe(380)
+          const box = (await conversation.boundingBox())!
+          expect(Math.round(box.width)).toBe(380)
+          expect(Math.round(box.x + box.width), 'the conversation meets the window\'s right edge').toBe(width)
           /* *Ask this review* is in it, on every tab (DEV-1333). */
           await expect(conversation.getByRole('heading', { name: 'Ask this review' })).toBeVisible()
         }
         else {
           await expect(conversation).toHaveCount(0)
+        }
+
+        /* The list's preview is its own third column, and meets the window's edge too. */
+        if (one.path === '') {
+          const preview = (await page.locator('.preview-column').boundingBox())!
+          expect(Math.round(preview.x + preview.width), 'the preview meets the window\'s right edge').toBe(width)
+        }
+
+        /*
+         * **The bands fill and the prose does not** (DEV-1372). However wide the window, no
+         * paragraph on a document's page runs its text wider than the larger of the two
+         * measures, read as the browser resolves them for that paragraph's own face and size:
+         * the page's copy stops at `--rd-measure`, a session's at `--rd-measure-recorded`.
+         *
+         * **What is measured is the text, not the box.** A row of a key and a title, or a
+         * line of figures, is a `<p>` whose box takes the band as a rule does, and that is
+         * the band filling; the words in it are what must not stretch. The review header is
+         * left to its own caps, which hold at every width: the title at 940px and its lead
+         * line at 800px (`ReviewStepPage.vue`). A pixel's grace, because a line's last glyph
+         * can overhang its box: the legend capped at 720 measures 721.
+         */
+        if (DOCUMENTS.includes(one.name)) {
+          const wider = await page.evaluate(() =>
+            [...document.querySelectorAll<HTMLElement>('main p')]
+              .filter(el => el.offsetParent !== null && !el.closest('[data-testid="review-header"]'))
+              .map((el) => {
+                const probe = document.createElement('span')
+                probe.style.display = 'block'
+                probe.style.maxWidth = 'var(--rd-measure-recorded)'
+                el.append(probe)
+                const recorded = Number.parseFloat(getComputedStyle(probe).maxWidth)
+                probe.remove()
+                const measure = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--rd-measure'))
+                const range = document.createRange()
+                range.selectNodeContents(el)
+                const lines = [...range.getClientRects()]
+                const text = lines.length === 0 ? 0 : Math.max(...lines.map(line => line.right)) - Math.min(...lines.map(line => line.left))
+                return { at: `${el.className} < ${el.parentElement!.className}`, text: Math.round(text), cap: Math.ceil(Math.max(measure, recorded)) }
+              })
+              .filter(one => one.text > one.cap + 1))
+          expect(wider, `paragraphs wider than their measure on ${one.name}`).toEqual([])
+        }
+
+        /*
+         * **A workbench still divides its columns in fractions** once its own container is
+         * wide enough, which beside the conversation is from 1,600 (at 1,280 both stack by
+         * design): Findings' list beside the finding, Draft's preview beside what you decide.
+         */
+        if (width >= 1600 && (one.name === 'code review' || one.name === 'the draft')) {
+          const tracks = await page.locator('.bench').first()
+            .evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)
+          expect(tracks, `${one.name}'s bench is two columns`).toBe(2)
         }
 
         expect(await sideways(page), 'the page scrolls sideways').toBe(0)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The shell every screen sits in: three columns, capped at `--rd-shell-wide`.
+ * The shell every screen sits in: three columns, filling the window at every width.
  *
  * `docs/design.md`, *The application shell* (21 November 2026), and the S1 and S2 screens:
  *
@@ -37,22 +37,24 @@
  * the three places are its navigation, and the sample-data marker is at its foot — and in
  * the bar under 700px, so it is on every screen at every width. The skip link stays first.
  *
- * ## Wide pages, and a page with a column of its own
+ * ## A page with a column of its own
  *
  * **A page that draws its own right-hand column asks for it** with
  * `definePageMeta({ split: true })`: the Pull requests list, whose preview is S1's third
- * column (DEV-1325). The main column then has no right-hand padding and no cap, so the
- * page's column meets the shell's edge and its rule runs the window's height, as the
+ * column (DEV-1325). The main column then has no right-hand padding, so the page's column
+ * meets the window's edge and its rule runs the window's height, as the
  * conversation's does on a review.
  *
- * A page still asks for the wider main column itself, with `definePageMeta({ wide: true })`
- * — read off the route, so a page that is wide is wide from its first frame. A document's
- * main column is capped at `--rd-shell-max`; a workbench's takes all the main column has.
+ * ## The whole window, and prose that does not grow with it
+ *
+ * **Desktop is the target, and Review Desk uses the whole window** (Patrick, 23 November
+ * 2026, DEV-1372). The shell has no outer cap and is not centred: the sidebar is against the
+ * window's left edge and the conversation against its right, and the main column takes
+ * everything between them, on every page — a document's as much as a workbench's. What stops
+ * a paragraph growing with the window is its own measure, `--rd-measure` or
+ * `--rd-measure-recorded`, never the column it sits in.
  */
 const route = useRoute()
-
-/** Whether this page asked to be a workbench rather than a document. */
-const wide = computed(() => route.meta.wide === true)
 
 /** Whether this page draws a column of its own at the right-hand edge. */
 const split = computed(() => route.meta.split === true)
@@ -248,10 +250,7 @@ watch(() => route.fullPath, () => {
       :inert="overlaid || undefined"
       :class="{ 'main--split': split }"
     >
-      <div
-        class="page"
-        :class="{ 'page--wide': wide || split }"
-      >
+      <div class="page">
         <slot />
       </div>
     </main>
@@ -311,9 +310,7 @@ watch(() => route.fullPath, () => {
 .shell {
   display: grid;
   grid-template-columns: var(--rd-sidebar-width) minmax(0, 1fr);
-  max-width: var(--rd-shell-wide);
   min-height: 100vh;
-  margin: 0 auto;
 }
 
 .shell--review {
@@ -383,14 +380,6 @@ watch(() => route.fullPath, () => {
 .main--split {
   padding-right: 0;
   padding-bottom: 0;
-}
-
-.page {
-  max-width: var(--rd-shell-max);
-}
-
-.page--wide {
-  max-width: none;
 }
 
 .shell-conversation {
