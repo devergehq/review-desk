@@ -820,7 +820,11 @@ const fold = computed(() => {
   margin: 0;
   padding: 0;
   list-style: none;
-  max-width: 860px;
+  /*
+   * A question is a sentence a session wrote, so it stops at the recorded measure (DEV-1372):
+   * at 860px, with no main-column cap, one ran 798px of text at a 2,560 window.
+   */
+  max-width: var(--rd-measure-recorded);
 }
 
 .question {

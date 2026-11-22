@@ -97,15 +97,16 @@ for (const width of [2560, 1920, 1600, 1280] as const) {
 
         /*
          * **The bands fill and the prose does not** (DEV-1372). However wide the window, no
-         * paragraph on a document's page — a `<p>`, or an `.rd-note` a flex column has made a
-         * block of — runs its text wider than the larger of the two measures, read as the
-         * browser resolves them for that paragraph's own face and size.
+         * paragraph on a document's page runs its text wider than the larger of the two
+         * measures, read as the browser resolves them for that paragraph's own face and size.
+         * A paragraph is a `<p>`, an `.rd-note` a flex column has made a block of, and the
+         * line of a row a session wrote — a blind-pass question, a finding's line on the case,
+         * a reply's line — measured by its own element, so the row's link is not counted.
          *
-         * **The bound is the looser of the two, on purpose.** The page's copy stops at
-         * `--rd-measure` (720px) and a session's at `--rd-measure-recorded` (about 746px at
-         * the body size), and which one a paragraph is held to is its stylesheet's choice,
-         * not something the DOM says. So page copy could run 26px past its own measure and
-         * pass; what this catches is a paragraph with no measure at all, which runs to the
+         * **The bound is whichever measure is larger at that paragraph's size, on purpose.**
+         * Which one a paragraph is held to is its stylesheet's choice, and the DOM does not
+         * record it, so one of the two kinds can run past its own measure by the difference
+         * and pass. What this catches is a paragraph with no measure at all, which runs to the
          * band — 1,000px and more at 2,560.
          *
          * **What is measured is the text, not the box.** A row of a key and a title, or a
@@ -117,7 +118,7 @@ for (const width of [2560, 1920, 1600, 1280] as const) {
          */
         if (DOCUMENTS.includes(one.name)) {
           const wider = await page.evaluate(() =>
-            [...document.querySelectorAll<HTMLElement>('main p, main .rd-note')]
+            [...document.querySelectorAll<HTMLElement>('main p, main .rd-note, main .question > span, main .what, main .cell--line')]
               .filter(el => el.offsetParent !== null && !el.closest('[data-testid="review-header"]'))
               .map((el) => {
                 const probe = document.createElement('span')

@@ -798,8 +798,13 @@ const fold = computed(() => foldSummary([
   color: var(--rd-ink-muted);
 }
 
+/*
+ * The row fills the band and its line stops at the recorded measure (DEV-1372): a claim is a
+ * sentence a session wrote, and a long one ran 1,412px at a 2,560 window.
+ */
 .what {
   min-width: 0;
+  max-width: var(--rd-measure-recorded);
   overflow-wrap: break-word;
 }
 
