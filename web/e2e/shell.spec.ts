@@ -288,3 +288,204 @@ test.describe('under 700 wide', () => {
     }
   })
 })
+
+/*
+ * **The side columns have drag handles** (DEV-1375): the sidebar's on its right edge, the
+ * conversation's and the Pull requests preview's on their left, each a focusable separator
+ * that the pointer and the arrow keys move between the column's limits, a double-click puts
+ * back, and the browser keeps across a reload. The arithmetic is `test/columns.spec.ts`'s;
+ * this is what only a browser answers — a pointer, a reload, a storage that throws.
+ */
+test.describe('the side columns’ handles', () => {
+  test.use({ viewport: { width: 1600, height: 900 } })
+
+  const handle = (page: Page, column: string) => page.locator(`[role="separator"][data-column="${column}"]`)
+  const width = async (page: Page, selector: string) =>
+    Math.round((await page.locator(selector).boundingBox())!.width)
+
+  /** Press on a handle's middle, move it `dx` across, and let go. */
+  async function drag(page: Page, column: string, dx: number) {
+    const box = (await handle(page, column).boundingBox())!
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + dx / 2, y, { steps: 4 })
+    await page.mouse.move(x + dx, y, { steps: 4 })
+    await page.mouse.up()
+  }
+
+  test('each is a separator a screen reader can read', async ({ page }) => {
+    await open(page, `reviews/${reviewId}`)
+    for (const [column, controls, now, max] of [
+      ['sidebar', 'sidebar', '232', '480'],
+      ['conversation', 'conversation', '380', '720'],
+    ] as const) {
+      const one = handle(page, column)
+      await expect(one).toHaveAttribute('aria-orientation', 'vertical')
+      await expect(one).toHaveAttribute('aria-controls', controls)
+      await expect(one).toHaveAttribute('aria-valuenow', now)
+      await expect(one).toHaveAttribute('tabindex', '0')
+      await expect(one).toHaveAttribute('aria-valuemax', max)
+      expect(await one.evaluate(el => getComputedStyle(el).cursor)).toBe('col-resize')
+      expect(Math.round((await one.boundingBox())!.width), 'the hit area is 8px').toBe(8)
+    }
+    await expect(handle(page, 'sidebar')).toHaveAttribute('aria-valuemin', '180')
+    await expect(handle(page, 'conversation')).toHaveAttribute('aria-valuemin', '300')
+  })
+
+  test('dragging the sidebar’s handle moves it between 180 and 480, and a reload keeps it', async ({ page }) => {
+    await open(page, 'rules')
+    await drag(page, 'sidebar', 100)
+    expect(await width(page, '#sidebar')).toBe(332)
+    expect((await page.locator('main#main').boundingBox())!.x, 'the main column follows').toBe(332)
+
+    await drag(page, 'sidebar', 1000)
+    expect(await width(page, '#sidebar'), 'no wider than 480').toBe(480)
+    await drag(page, 'sidebar', -1000)
+    expect(await width(page, '#sidebar'), 'no narrower than 180').toBe(180)
+
+    await drag(page, 'sidebar', 120)
+    await page.reload()
+    await open(page, 'rules')
+    expect(await width(page, '#sidebar'), 'kept across a reload').toBe(300)
+    /* And on every page: the sidebar is one column, wherever it is drawn. */
+    await open(page, `reviews/${reviewId}/findings`)
+    expect(await width(page, '#sidebar')).toBe(300)
+
+    await handle(page, 'sidebar').dblclick()
+    expect(await width(page, '#sidebar'), 'a double-click is the default').toBe(232)
+    await page.reload()
+    await open(page, `reviews/${reviewId}/findings`)
+    expect(await width(page, '#sidebar'), 'and the default is what is kept').toBe(232)
+  })
+
+  test('dragging the conversation’s handle moves it between 300 and the maximum, and a reload keeps it', async ({ page }) => {
+    await open(page, `reviews/${reviewId}`)
+    await drag(page, 'conversation', -100)
+    expect(await width(page, '.shell-conversation')).toBe(480)
+    expect(Math.round((await page.locator('main#main').boundingBox())!.width)).toBe(1600 - 232 - 480)
+
+    /* At 1,600 the maximum is 720, which leaves the main column 648. */
+    await drag(page, 'conversation', -1000)
+    expect(await width(page, '.shell-conversation')).toBe(720)
+    await drag(page, 'conversation', 1000)
+    expect(await width(page, '.shell-conversation')).toBe(300)
+
+    await drag(page, 'conversation', -150)
+    await page.reload()
+    await open(page, `reviews/${reviewId}/findings`)
+    expect(await width(page, '.shell-conversation'), 'kept across a reload, on every tab').toBe(450)
+    const box = (await page.locator('.shell-conversation').boundingBox())!
+    expect(Math.round(box.x + box.width), 'still at the window’s edge').toBe(1600)
+
+    await handle(page, 'conversation').dblclick()
+    expect(await width(page, '.shell-conversation')).toBe(380)
+  })
+
+  test('dragging the preview’s handle moves it between the conversation’s limits', async ({ page }) => {
+    await open(page, '')
+    await expect(handle(page, 'preview')).toHaveAttribute('aria-controls', 'preview')
+    await drag(page, 'preview', -100)
+    expect(await width(page, '.preview-column')).toBe(480)
+    await drag(page, 'preview', -1000)
+    expect(await width(page, '.preview-column')).toBe(720)
+    await drag(page, 'preview', 1000)
+    expect(await width(page, '.preview-column')).toBe(300)
+    const box = (await page.locator('.preview-column').boundingBox())!
+    expect(Math.round(box.x + box.width), 'the preview meets the window’s edge').toBe(1600)
+
+    await drag(page, 'preview', -60)
+    await page.reload()
+    await open(page, '')
+    expect(await width(page, '.preview-column'), 'kept across a reload').toBe(360)
+    /* The preview's width is its own: the conversation is still at its default. */
+    await open(page, `reviews/${reviewId}`)
+    expect(await width(page, '.shell-conversation')).toBe(380)
+    await open(page, '')
+    await handle(page, 'preview').dblclick()
+    expect(await width(page, '.preview-column')).toBe(380)
+  })
+
+  test('the arrow keys move a handle, Shift further, and Home and End go to the limits', async ({ page }) => {
+    await open(page, `reviews/${reviewId}`)
+    const sidebar = handle(page, 'sidebar')
+    await sidebar.focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(sidebar).toHaveAttribute('aria-valuenow', '248')
+    await page.keyboard.press('Shift+ArrowRight')
+    await expect(sidebar).toHaveAttribute('aria-valuenow', '312')
+    expect(await width(page, '#sidebar')).toBe(312)
+    await page.keyboard.press('ArrowLeft')
+    await expect(sidebar).toHaveAttribute('aria-valuenow', '296')
+    await page.keyboard.press('Home')
+    await expect(sidebar).toHaveAttribute('aria-valuenow', '180')
+    await page.keyboard.press('End')
+    await expect(sidebar).toHaveAttribute('aria-valuenow', '480')
+
+    /* The conversation's handle is on its left edge, so Left widens it. */
+    const conversation = handle(page, 'conversation')
+    await conversation.focus()
+    await page.keyboard.press('ArrowLeft')
+    await expect(conversation).toHaveAttribute('aria-valuenow', '396')
+    await page.keyboard.press('Shift+ArrowRight')
+    await expect(conversation).toHaveAttribute('aria-valuenow', '332')
+    /* 1,600 − 480 − 480: what the sidebar at its widest leaves, under the column's own 720. */
+    await page.keyboard.press('End')
+    await expect(conversation).toHaveAttribute('aria-valuenow', '640')
+    await expect(sidebar).toHaveAttribute('aria-valuemax', '480')
+    expect(await width(page, '.shell-conversation')).toBe(640)
+  })
+
+  test('at 1,100 with both side columns at their widest, the main column keeps 480px', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('review-desk:width:sidebar', '480')
+      localStorage.setItem('review-desk:width:conversation', '720')
+    })
+    await page.setViewportSize({ width: 1100, height: 900 })
+    await open(page, `reviews/${reviewId}/findings`)
+    const main = Math.round((await page.locator('main#main').boundingBox())!.width)
+    expect(main).toBeGreaterThanOrEqual(480)
+    expect(await sideways(page)).toBe(0)
+
+    /* The widths set are kept, and come back when there is room for them again. */
+    await page.setViewportSize({ width: 2400, height: 900 })
+    await expect.poll(() => width(page, '#sidebar')).toBe(480)
+    await expect.poll(() => width(page, '.shell-conversation')).toBe(720)
+  })
+
+  test('with storage blocked the shell draws at its defaults, and nothing throws', async ({ page }) => {
+    const thrown: string[] = []
+    page.on('pageerror', error => thrown.push(error.message))
+    await page.addInitScript(() => {
+      const refuse = () => {
+        throw new DOMException('The operation is insecure.', 'SecurityError')
+      }
+      Storage.prototype.getItem = refuse
+      Storage.prototype.setItem = refuse
+      Storage.prototype.removeItem = refuse
+    })
+    await open(page, `reviews/${reviewId}`)
+    expect(await width(page, '#sidebar')).toBe(232)
+    expect(await width(page, '.shell-conversation')).toBe(380)
+    /* The handles still move, for this page. */
+    await drag(page, 'sidebar', 40)
+    expect(await width(page, '#sidebar')).toBe(272)
+    await handle(page, 'sidebar').dblclick()
+    expect(await width(page, '#sidebar')).toBe(232)
+    expect(thrown).toEqual([])
+  })
+
+  test('under 1,100 the conversation has no handle, and under 700 nothing does', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 800 })
+    await open(page, `reviews/${reviewId}`)
+    await expect(handle(page, 'sidebar')).toBeVisible()
+    await expect(handle(page, 'conversation')).toBeHidden()
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await openOnAPhone(page, `reviews/${reviewId}`)
+    await expect(page.locator('[role="separator"][data-column]:visible')).toHaveCount(0)
+    await openOnAPhone(page, '')
+    await expect(page.locator('[role="separator"][data-column]:visible')).toHaveCount(0)
+  })
+})

@@ -61,11 +61,25 @@ workflow are settled; typography and styling may still move. The screens are in
 
 **Every screen sits in one shell of three columns:**
 
-| Column | Width at 1,600 | What it holds |
-| -- | -- | -- |
-| Sidebar | 232px | The wordmark; **Pull requests** and **Rules**; pull requests grouped as being reviewed, waiting on the author, done this week; the GitHub and agent status lines |
-| Main | the rest | The page: a review header and its tabs, or the list |
-| Conversation | 380px | **Ask this review**, on every review tab. Absent on the list and on Rules |
+| Column | Default width | Limits | What it holds |
+| -- | -- | -- | -- |
+| Sidebar | 232px | 180–480px | The wordmark; **Pull requests** and **Rules**; pull requests grouped as being reviewed, waiting on the author, done this week; the GitHub and agent status lines |
+| Main | the rest | never under 480px | The page: a review header and its tabs, or the list |
+| Conversation | 380px | 300px to half the window, or 720px if that is smaller | **Ask this review**, on every review tab. Absent on the list and on Rules |
+| Pull requests preview | 380px | the conversation's | The selected row, on the list (below) |
+
+**The widths are defaults: each side column has a drag handle on its inner edge** (DEV-1375).
+Patrick, 23 November 2026: *"there should be a handle there where I can move it. Likewise, on
+the other side, too."* The handle is a focusable `role="separator"` with its value and limits;
+the arrow keys move it 16px (64px with Shift), Home and End go to the limits, and a double-click
+puts the default back. **The width set is kept per browser, across reloads**, in
+`localStorage` read inside `try`, so blocked storage draws the defaults. **The main column always
+keeps 480px**: when the window is too narrow for what was set, the right-hand column gives way
+first, then the sidebar, and what was set comes back when there is room — a drag stops where
+the main column would go under 480 rather than pushing the other column. Under 1,100px the
+conversation has no handle; under 700px nothing does, and the phone's sidebar is 232px.
+`web/app/utils/columns.ts` holds the limits and the arithmetic, `ColumnHandle.vue` the handle,
+`web/test/columns.spec.ts` the rules, and `web/e2e/shell.spec.ts` drags each handle.
 
 **How it is built** (DEV-1323). `web/app/layouts/default.vue` is the grid; `AppSidebar` is the
 first column. Six rules it keeps, each in the file that holds it:
@@ -226,14 +240,14 @@ This replaces the two caps the section used to set — 1,600px around the shell
 
 | Width | Shell | Main column |
 | -- | -- | -- |
-| ≥1,100 | Sidebar 232px at the left edge; conversation 380px at the right edge on a review's pages; no cap, no centring | Everything between them, on every page: 1,308px at 1,920 on a review, 2,328px at 2,560 on Rules |
+| ≥1,100 | Sidebar at the left edge, 232px by default; conversation at the right edge on a review's pages, 380px by default; each dragged within its limits (*The application shell*); no cap, no centring | Everything between them, on every page, and never under 480px: at the defaults, 1,308px at 1,920 on a review, 2,328px at 2,560 on Rules |
 | 700–1,099 | The conversation sits under the page | Full width |
 | <700 | One column, the sidebar behind the menu, the conversation a bottom sheet (DEV-1336) | Full width |
 
 | Screen | Kind | What fills the width |
 | -- | -- | -- |
 | Rules, one review, the case, What happened | Document | The bands — cards, tables, grids and rules. The paragraphs in them stop at their measure, left-aligned in the band |
-| Pull requests | List beside its preview | The rows take what the 380px preview leaves (`split: true`), and the preview meets the window's edge |
+| Pull requests | List beside its preview | The rows take what the preview leaves (380px by default, dragged like the conversation; `split: true`), and the preview meets the window's edge |
 | Code review, Draft | Workbench | The columns, divided in fractions by container queries on the page's own width |
 
 `web/e2e/shell.spec.ts` measures every page against this at 2,560, 1,920, 1,600 and 1,280: the
@@ -542,4 +556,5 @@ Neither of these is a decision against; both are waiting on real use.
 | 21 Nov 2026 | Queue and Reviews are one Pull requests list with a preview; the bottom line is one helper | *The application shell*; `pages/index.vue`, `bottomLine` |
 | 21 Nov 2026 | Overview is three pages chosen from the record; outcomes are grouped once, each with its basis | `overview.ts`, `sinceYouPosted` |
 | 23 Nov 2026 | Desktop is the target: the shell fills the window, every page has the whole main column, and prose stops at its measure | *Two kinds of screen*; `default.vue`, `shell.spec.ts` |
+| 23 Nov 2026 | The side columns' widths are defaults: each has a drag handle, the width is kept per browser, and the main column keeps 480px | *The application shell*; `utils/columns.ts`, `ColumnHandle.vue` |
 | 15 Nov 2026 | Review Desk never starts, resumes or drives Claude itself; without Allele the conversation is one way | *The application shell*; S11 |

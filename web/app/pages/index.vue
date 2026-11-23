@@ -2319,9 +2319,17 @@ function onTabKey(event: KeyboardEvent) {
       `K` and `Enter` still walk the list there.
     -->
     <aside
+      id="preview"
       class="preview-column"
       aria-label="Preview"
     >
+      <!-- Its width is the developer's to drag, as the conversation's is on a review (DEV-1375). -->
+      <ColumnHandle
+        column="preview"
+        edge="left"
+        label="Resize the preview"
+        controls="preview"
+      />
       <div
         v-if="view === 'waiting' && nothingNeedsYou && inbox.data.value"
         class="since"
@@ -2365,7 +2373,7 @@ function onTabKey(event: KeyboardEvent) {
  */
 .pull-requests {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--rd-conversation-width);
+  grid-template-columns: minmax(0, 1fr) var(--rd-preview-now, var(--rd-conversation-width));
   min-height: 100%;
 }
 
