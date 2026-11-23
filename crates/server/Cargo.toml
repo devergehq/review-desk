@@ -47,7 +47,7 @@ libc = "0.2"
 # Both of these are test-only on purpose: the shipped binary gains neither, and a schema
 # validator in the binary would be 78 crates to check what the handlers already know.
 [dev-dependencies]
-jsonschema = { version = "0.58", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
 
 # `tests/concurrency.rs` opens several connections in one burst without waiting for any of
 # them, which needs a socket it can set non-blocking *before* connecting -- something
