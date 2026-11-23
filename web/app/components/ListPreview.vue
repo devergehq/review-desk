@@ -20,16 +20,32 @@
  * field to come from, and *Last thing you asked* is the conversation's, which the second
  * stack builds. Each is left out rather than drawn empty.
  *
- * **It reads `GET /reviews/{id}` for the row it is showing**, one review at a time: the
- * list's own read is the inbox, which carries no brief. Keyed by the review in the parent,
- * so moving the selection reads the next one rather than redrawing the last one's answer.
+ * **It follows the selection rather than being remounted for it** (DEV-1374). What the row
+ * brings — the number, the title, the state word, the session — is drawn on the frame the
+ * selection moves. The rest comes from `GET /reviews/{id}`, which the list's own read, the
+ * inbox, does not carry: drawn at once when the page holds that review already, and read
+ * again behind it once `rested` says the pointer has stopped. Until a review is held its body
+ * says *Reading the review…*, and never shows the last row's answer.
  */
 import type { ListRow } from '~/utils/pullRequests'
 
-const props = defineProps<{ row: ListRow }>()
+const props = defineProps<{
+  row: ListRow
+  /** Whether the selection has stayed put long enough to be worth a read (review F6). */
+  rested: boolean
+}>()
 
 const desk = useReviewDesk()
-const detail = props.row.reviewId != null ? desk.review(props.row.reviewId) : null
+const held = desk.heldReview(computed(() => props.row.reviewId ?? null))
+
+/* A read once the row has rested: quietly, behind whatever is held for it. */
+watch(
+  () => [props.row.reviewId, props.rested] as const,
+  ([id, rested]) => {
+    if (id != null && rested) void held.refresh()
+  },
+  { immediate: true },
+)
 
 /*
  * **The header's own derivation, with the sidebar's row**, where the row did not bring a
@@ -44,14 +60,14 @@ const groups = computed(() =>
 
 const state = computed(() => {
   if (props.row.state) return props.row.state
-  const data = detail?.data.value
+  const data = held.data.value
   return data ? stateOfReview(data, rowFor(groups.value, data.review)) : null
 })
 
-const line = computed(() => bottomLine(detail?.data.value?.brief))
+const line = computed(() => bottomLine(held.data.value?.brief))
 
 const action = computed(() => {
-  const data = detail?.data.value
+  const data = held.data.value
   if (!data || state.value == null) return null
   return primaryAction(data.review.id, state.value, repliesWaiting(data))
 })
@@ -62,7 +78,7 @@ const waitsOnYou = computed(() =>
 /** The facts table: each row only when the record holds its figure. */
 const facts = computed(() => {
   const rows: Array<{ label: string, says: string }> = []
-  const data = detail?.data.value
+  const data = held.data.value
   if (data && data.findings.length > 0) {
     const tally = severityTally(data.finding_severities)
     rows.push({
@@ -109,14 +125,15 @@ const facts = computed(() => {
       {{ row.title }}
     </p>
 
-    <template v-if="detail">
+    <template v-if="row.reviewId != null">
       <p
-        v-if="detail.pending.value && !detail.loaded.value"
+        v-if="!held.data.value && !held.error.value"
         class="rd-meta"
+        data-testid="preview-reading"
       >
         Reading the review…
       </p>
-      <template v-else-if="detail.data.value">
+      <template v-else-if="held.data.value">
         <div
           v-if="line"
           class="bottom-line"
@@ -142,6 +159,18 @@ const facts = computed(() => {
           No brief has been written for this round yet.
         </p>
       </template>
+      <!--
+        A read that failed with nothing held: said, rather than a blank body (self-review
+        round 1). A read ahead can fail for a row nobody has visited yet, and resting on the
+        row reads it again.
+      -->
+      <p
+        v-else
+        class="rd-meta"
+        data-testid="preview-unread"
+      >
+        The review could not be read. {{ held.error.value?.message }}
+      </p>
     </template>
     <p
       v-else

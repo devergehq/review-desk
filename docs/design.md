@@ -114,7 +114,10 @@ first column. Six rules it keeps, each in the file that holds it:
   one helper the Overview draws it with too — the state, the findings, what was not checked,
   the session, and `primaryAction`. A fact with no field is left out. It is not drawn under
   1,200px, where the table needs the width. The page asks for its column with
-  `definePageMeta({ split: true })`.
+  `definePageMeta({ split: true })`. **It keeps up with the pointer** (DEV-1374): the
+  highlight and what the row itself knows move with no wait, a review read once is drawn
+  from memory, and the open tab's reviews are read ahead. Only a fresh read waits for the
+  pointer to rest, so a sweep down the list is not a read per row.
 - **When nothing waits on the developer** the table reads *Nothing needs you*, a line for each
   other group, and the preview *Since yesterday* — built from the three times the record keeps
   (posted, came back, finished) and nothing forecast. `sinceYesterday` in
