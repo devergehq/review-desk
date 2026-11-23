@@ -45,6 +45,11 @@ pub const TIMEOUT: Duration = Duration::from_secs(1);
 /// Fifteen seconds, not [`TIMEOUT`]'s one: Allele answers `sessions_prompt` only once it has
 /// seen the session start on the notice, which takes as long as Claude takes to begin. It is
 /// spent on the handover thread alone, never on a request someone is waiting for.
+///
+/// **Shorter than Allele's own 30 s wait for the session to start, on purpose** (DEV-1383
+/// review, N2). Past 15 s Review Desk stops waiting and reads the attempt as
+/// [`Handed::Uncertain`], the same as Allele's `prompt_delivery_unconfirmed`: waiting the
+/// whole 30 s would hold every question behind it on the handover thread.
 pub const PROMPT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// The `allele.ext/1` contract a handover asks for.

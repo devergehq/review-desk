@@ -801,12 +801,15 @@ marks delivery. The server sends it off the request, so asking never waits on Al
 again on a sweep every 15 seconds for an `ask` that is still unread: never more than three
 times, and no sooner than two minutes after the last. A question just asked goes ahead of
 the rest of a sweep, and the whole of one handover, `hello` and prompt, is held to 15
-seconds. A send-back is never handed over.
+seconds. **That is shorter than the 30 s Allele itself waits to see the session start**, on
+purpose: a longer wait would hold every question behind it. A session that has not started
+within 15 s is read as uncertain, below, and the same rule applies to it as to Allele's own
+`prompt_delivery_unconfirmed`. A send-back is never handed over.
 
 | Allele answers | Review Desk |
 | -- | -- |
 | `prompted` | records `handed_over_at` and adds one to `handed_over_count` |
-| `prompt_delivery_unconfirmed`, a code it does not know, or no answer once the prompt was sent | records it the same way, because the notice may be in front of the session: so it is not pasted again within two minutes, nor more than three times |
+| `prompt_delivery_unconfirmed`, a code it does not know, or no answer once the prompt was sent | records it the same way, because the notice may be in front of the session — or sitting unsent in its input box — so it is not pasted again within two minutes, nor more than three times. The page draws it as handed over |
 | `session_busy` | records nothing, and tries again on the next sweep |
 | `session_awaiting_person`, `session_not_live`, `not_dispatched`, `session_not_found` | records nothing, and does not try that session again until Allele reports a different state for it |
 | an Allele without `sessions_prompt` | records nothing, and says so once on `serve`'s standard error |

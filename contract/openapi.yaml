@@ -2985,17 +2985,20 @@ components:
           type: [string, 'null']
           format: date-time
           description: |
-            When Allele last said it had handed this question to the review's session
-            (DEV-1383), or null while it never has. Only an `ask` is ever handed over, and
-            only with Allele present. A handover is not a reading: `read_at` still says the
-            session marked it read.
+            When Review Desk last asked Allele to hand this question to the review's session
+            and Allele did not say it had failed (DEV-1383), or null while it never has. That
+            is Allele answering `prompted`, or an answer that leaves it uncertain — such as
+            `prompt_delivery_unconfirmed`, or none within 15 s — because the notice may then
+            be in front of the session. Only an `ask` is ever handed over, and only with
+            Allele present. A handover is not a reading: `read_at` still says the session
+            marked it read.
         handed_over_count:
           type: integer
           minimum: 0
           maximum: 3
           description: |
-            How many times Allele has handed it over: at most three, no sooner than two
-            minutes apart, and never once it is read. Nought on every message that is not
+            How many times it has been handed over, counted as `handed_over_at` is: at most
+            three, no sooner than two minutes apart, and never once it is read. Nought on every message that is not
             an `ask`, and on every message written before this field.
         about: { $ref: '#/components/schemas/MessageAbout' }
         parsed:
