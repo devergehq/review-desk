@@ -6,9 +6,16 @@
  *
  * | Column | Width | Holds |
  * | -- | -- | -- |
- * | Sidebar | 232px | `AppSidebar`: the wordmark, the navigation, every pull request, the status lines |
- * | Main | the rest | The page |
- * | Conversation | 380px | **Ask this review**, on a review's pages only. Absent on the lists and Rules |
+ * | Sidebar | 232px by default | `AppSidebar`: the wordmark, the navigation, every pull request, the status lines |
+ * | Main | the rest, never under 480px | The page |
+ * | Conversation | 380px by default | **Ask this review**, on a review's pages only. Absent on the lists and Rules |
+ *
+ * **The two side columns are as wide as the developer drags them** (DEV-1375). Each has a
+ * `ColumnHandle` on its inner edge, and the widths are `useColumnWidths`'s, set on the shell
+ * as `--rd-sidebar-now` and `--rd-conversation-now` (and `--rd-preview-now`, which the Pull
+ * requests preview reads). The limits, and how the side columns give way so the main column
+ * keeps 480px, are in `utils/columns.ts`. Under 1,100px the conversation has no handle, and
+ * under 700px nothing does: the phone's sidebar keeps the token's 232px.
  *
  * **The conversation column holds *Ask this review*** (DEV-1333). The layout draws the
  * column, `#conversation`, and the review's page teleports its `ConversationPanel` into it,
@@ -54,13 +61,18 @@
  * a paragraph growing with the window is its own measure, `--rd-measure` or
  * `--rd-measure-recorded`, never the column it sits in.
  */
+import { isReviewPath } from '../utils/columns'
+
 const route = useRoute()
 
 /** Whether this page draws a column of its own at the right-hand edge. */
 const split = computed(() => route.meta.split === true)
 
 /** A review's pages, which are the ones the conversation sits beside. */
-const onAReview = computed(() => /^\/reviews\/\d+(?:\/|$)/.test(route.path))
+const onAReview = computed(() => isReviewPath(route.path))
+
+/** The side columns' widths, as the custom properties the grid reads (DEV-1375). */
+const { style: columnWidths } = useColumnWidths()
 
 /** Whether the sidebar is open over the page, under 700px. Above it, it is always there. */
 const menuOpen = ref(false)
@@ -167,6 +179,7 @@ watch(() => route.fullPath, () => {
   <div
     class="shell"
     :class="{ 'shell--review': onAReview, 'shell--menu-open': menuOpen, 'shell--sheet-open': sheetOpen }"
+    :style="columnWidths"
   >
     <!--
       Inert while anything is over the page: a skip link under the scrim is one Tab out of
@@ -243,6 +256,12 @@ watch(() => route.fullPath, () => {
     >
       <AppSidebar />
     </aside>
+    <ColumnHandle
+      column="sidebar"
+      edge="right"
+      label="Resize the sidebar"
+      controls="sidebar"
+    />
 
     <main
       id="main"
@@ -303,24 +322,33 @@ watch(() => route.fullPath, () => {
         </button>
       </div>
     </aside>
+    <ColumnHandle
+      v-if="onAReview"
+      column="conversation"
+      edge="left"
+      label="Resize the conversation"
+      controls="conversation"
+    />
   </div>
 </template>
 
 <style scoped>
 .shell {
   display: grid;
-  grid-template-columns: var(--rd-sidebar-width) minmax(0, 1fr);
+  grid-template-columns: var(--rd-sidebar-now, var(--rd-sidebar-width)) minmax(0, 1fr);
   min-height: 100vh;
 }
 
 .shell--review {
-  grid-template-columns: var(--rd-sidebar-width) minmax(0, 1fr) var(--rd-conversation-width);
+  grid-template-columns:
+    var(--rd-sidebar-now, var(--rd-sidebar-width)) minmax(0, 1fr)
+    var(--rd-conversation-now, var(--rd-conversation-width));
 }
 
 /* Under 1,100 the conversation sits under the page rather than beside it. See the note above. */
 @media (max-width: 1099px) {
   .shell--review {
-    grid-template-columns: var(--rd-sidebar-width) minmax(0, 1fr);
+    grid-template-columns: var(--rd-sidebar-now, var(--rd-sidebar-width)) minmax(0, 1fr);
   }
 
   .shell--review .sidebar {
