@@ -510,9 +510,10 @@ test.describe('with a classic scrollbar', () => {
 
   /*
    * **A classic scrollbar arriving after the shell mounted** narrows what the grid divides
-   * and fires no `resize` (#114's self-review, F1). Headless Chromium hides scrollbars and a
-   * Mac draws them over the page, so this browser is launched without `--hide-scrollbars`
-   * and a scrollbar that takes 15px is styled in, after load.
+   * and fires no `resize` (#114's self-review, F1). Headless Chromium hides scrollbars, so
+   * this browser is launched without `--hide-scrollbars`; and because Linux then draws a
+   * classic one from the first paint and a Mac draws one over the page, the scrollbar is
+   * styled to nothing after load — the grid widens with no `resize` — and then to 15px.
    */
   test('a scrollbar that arrives after load still leaves the main column 480px', async ({ playwright }) => {
     /* Its own browser: `--hide-scrollbars` is a launch flag, and the suite's browser has it. */
@@ -529,7 +530,9 @@ test.describe('with a classic scrollbar', () => {
         localStorage.setItem('review-desk:width:conversation', '720')
       })
       await open(page, `reviews/${reviewId}/findings`)
-      expect(await width(page, '#sidebar'), 'no scrollbar yet: 1,100 − 480 − 300').toBe(320)
+      await page.addStyleTag({ content: '::-webkit-scrollbar { width: 0 }' })
+      expect(await page.evaluate(() => window.innerWidth - document.documentElement.clientWidth), 'no scrollbar').toBe(0)
+      await expect.poll(() => width(page, '#sidebar'), 'no scrollbar: 1,100 − 480 − 300').toBe(320)
       await page.addStyleTag({ content: '::-webkit-scrollbar { width: 15px } ::-webkit-scrollbar-thumb { background: #888 }' })
       const gutter = await page.evaluate(() => window.innerWidth - document.documentElement.clientWidth)
       expect(gutter, 'the scrollbar takes width, or this test proves nothing').toBe(15)
