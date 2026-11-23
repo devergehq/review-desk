@@ -82,13 +82,15 @@ test('loading the selection address directly selects the same row', async ({ pag
   await expect(page.getByTestId('list-preview')).toHaveAttribute('aria-label', `#${pr}, previewed`)
 })
 
-test('the same row clicked again after K has moved the selection selects it again', async ({ page }) => {
+test('the same row clicked again after J or K has moved the selection selects it again', async ({ page }) => {
   /* Self-review round 1, F2: while the address still said `?pr=`, this click went nowhere. */
   await page.goto(`${seeded}?pr=acme%2Fportal%23${pr}`)
   const selected = page.locator('#panel-reviewing .queue-line--selected')
   await expect(selected).toContainText(`#${pr}`)
 
-  await page.locator('body').press('k')
+  /* Away from it, whichever way there is room: the tab sorts its two rows by age. */
+  const first = await page.locator('#panel-reviewing .queue-line').first().getAttribute('data-row-key')
+  await page.locator('body').press(first === `acme/portal#${pr}` ? 'j' : 'k')
   await expect(selected).not.toContainText(`#${pr}`)
 
   const group = page.locator('#sidebar .group--being_reviewed')
