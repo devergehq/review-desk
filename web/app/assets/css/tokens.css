@@ -156,7 +156,15 @@
   --rd-type-meta: 12px;
   --rd-type-label: 11px;
 
-  /* ---- The shell's two fixed columns, at every width over 700px. ---- */
+  /*
+   * ---- The shell's two side columns, at their defaults. ----
+   *
+   * **Defaults, not fixed widths** (DEV-1375): over 700px each has a drag handle, and the
+   * shell draws them at `--rd-sidebar-now` and `--rd-conversation-now`, which fall back to
+   * these. The limits a handle is held to are numbers a script clamps and announces, so they
+   * live beside it in `web/app/utils/columns.ts`, whose `DEFAULT_WIDTH` repeats these two and
+   * `web/test/columns.spec.ts` holds equal. Under 700px the sidebar is these 232px still.
+   */
   --rd-sidebar-width: 232px;
   --rd-conversation-width: 380px;
 

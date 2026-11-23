@@ -3749,26 +3749,38 @@ describe('the Pull requests list', () => {
     expect(tabCount(page, 'Done')).toBe(1)
   })
 
-  it('selects a row the pointer rests on, and not one it crossed on its way out of the list', async () => {
+  it('selects the row the pointer is over at once, and draws its header on that tick', async () => {
     /*
-     * Self-review round 2: the rest timer outlived the pointer. Crossing row B on the way to
-     * the preview left a timer nothing cleared, and the preview swapped to B under the click.
+     * DEV-1374: the selection used to wait 120ms for the pointer to rest. Now the highlight
+     * and the row's own number and title follow it with no timer — one tick, not a timeout.
+     */
+    const page = await shown(Inbox)
+    const rows = page.findAll('#panel-waiting .queue-line')
+    const number = rows[1]!.find('.pr').text()
+
+    await rows[1]!.find('.row').trigger('mouseover', { clientX: 300, clientY: 400 })
+    await page.vm.$nextTick()
+    expect(page.find('#panel-waiting .queue-line--selected .pr').text()).toBe(number)
+    expect(page.find('[data-testid="list-preview"]').text()).toContain(number)
+  })
+
+  it('keeps the row the pointer last crossed when it leaves the list, and swaps nothing later', async () => {
+    /*
+     * Self-review round 2: a timer outlived the pointer, and the preview swapped to a crossed
+     * row under the click. No timer swaps the preview now; leaving only ends the wait.
      */
     const page = await shown(Inbox)
     const rows = page.findAll('#panel-waiting .queue-line')
     const selected = () => page.find('#panel-waiting .queue-line--selected .pr').text()
-    const first = selected()
 
     await rows[1]!.find('.row').trigger('mouseover', { clientX: 300, clientY: 400 })
     await page.find('.list').trigger('mouseleave')
+    const drawn = page.find('[data-testid="list-preview"] .number').text()
     await new Promise(resolve => setTimeout(resolve, 200))
     await settle(page)
-    expect(selected(), 'crossed and left: nothing changes').toBe(first)
-
-    await rows[1]!.find('.row').trigger('mouseover', { clientX: 310, clientY: 410 })
-    await new Promise(resolve => setTimeout(resolve, 200))
-    await settle(page)
-    expect(selected(), 'rested: the row is selected').toBe(rows[1]!.find('.pr').text())
+    expect(selected()).toBe(rows[1]!.find('.pr').text())
+    expect(page.find('[data-testid="list-preview"] .number').text(), 'nothing swapped after leaving')
+      .toBe(drawn)
   })
 
   it('leaves a modified arrow to the browser', async () => {
