@@ -132,6 +132,12 @@ describe('whether a message has reached the session', () => {
       .toBe('Not read yet · the session last checked 15 min ago')
   })
 
+  it('calls a second past the limit a stop, though the minute shown is still fifteen', () => {
+    const past = new Date(now.getTime() - (MESSAGES_CHECKED_WITHIN_SECONDS + 1) * 1000)
+    expect(deliveryLine(asked, session('finished', past.toISOString()), now))
+      .toBe('Not read yet · the session hasn\'t checked for messages in 15 min, so its watcher may have stopped')
+  })
+
   it('says the watcher may have stopped once the last check is past the limit', () => {
     expect(MESSAGES_CHECKED_WITHIN_SECONDS).toBe(900)
     expect(deliveryLine(asked, session('finished', '2026-10-30T10:47:00Z'), now))

@@ -878,6 +878,9 @@ The bare `--unread` sweep is a dispatcher's and stamps nothing.
 Fifteen minutes is three missed passes at a healthy watcher's 300-second cadence with no
 draft waiting, so a question asked just after a pass, which waits nearly five minutes, is
 never called stopped. `MESSAGES_CHECKED_WITHIN_SECONDS` in `web/app/utils/session.ts`.
+**It is fixed, not read from the watcher's configuration**, because Review Desk reads
+nothing of Locus's: an instance whose `watch_interval_secs` is over 300 seconds needs
+this raised to stay three passes, or a healthy watcher will read as stopped.
 
 #### Who is answering: two way, one way, or nobody
 
