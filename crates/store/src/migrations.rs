@@ -2065,6 +2065,30 @@ CREATE UNIQUE INDEX suggestion_answers_one
     ON suggestion_answers (review_id, message_seq, COALESCE(suggestion, 0));
 "#,
     },
+    Migration {
+        version: 28,
+        name: "message-checks",
+        sql: r#"
+-- **When a review's session last checked for the developer's messages** — DEV-1381.
+--
+-- Before this an unread question said *Not read yet* and nothing else, so a watcher that
+-- had stopped looked exactly like one between passes. `message list --unread --review`,
+-- which a review's watcher runs on every pass, now stamps the review here, and the page
+-- says how long ago that was. The bare `--unread` sweep stamps nothing: it is a
+-- dispatcher's, not one review's session.
+--
+-- **Its own table rather than a column on `reviews`**, for migration 23's reason and one
+-- more: `reviews` is read everywhere, and this is written on every watcher pass, as often
+-- as every twenty seconds. One row per review, replaced in place.
+--
+-- **No backfill.** Nothing recorded a check before this, so every review starts never
+-- checked, which is what the page says.
+CREATE TABLE message_checks (
+    review_id  INTEGER PRIMARY KEY REFERENCES reviews (id) ON DELETE CASCADE,
+    checked_at INTEGER NOT NULL
+);
+"#,
+    },
 ];
 
 /// The version a freshly created database lands on.

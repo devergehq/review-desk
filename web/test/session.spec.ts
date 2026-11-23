@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { deliveryLine, freshSessionLine, sessionAnswered, sessionLine } from '../app/utils/session'
-import type { ReviewMessage, SessionReading, SessionStatus } from '../app/types/desk'
+import {
+  deliveryLine,
+  freshSessionLine,
+  MESSAGES_CHECKED_WITHIN_SECONDS,
+  sessionAnswered,
+  sessionLine,
+} from '../app/utils/session'
+import type { ReviewMessage, ReviewSession, SessionReading, SessionStatus } from '../app/types/desk'
 
 function reading(status: SessionStatus, over: Partial<SessionReading> = {}): SessionReading {
   return {
@@ -96,11 +102,65 @@ describe('whether a message has reached the session', () => {
     )).toBe('Read by allele-1 1 min ago')
   })
 
-  it('says not delivered only where Allele gives a reason', () => {
-    expect(deliveryLine(asked, reading('gone'), now)).toContain('Not delivered')
-    expect(deliveryLine(asked, reading('awaiting_input'), now)).toContain('Not delivered')
-    expect(deliveryLine(asked, reading('running'), now)).toBe('Not read yet')
+  /** A session read with its reading and the record's last check. DEV-1381. */
+  function session(
+    status: SessionStatus | null,
+    checked: string | null,
+  ): Pick<ReviewSession, 'reading' | 'messages_checked_at'> {
+    return { reading: status ? reading(status) : null, messages_checked_at: checked }
+  }
+
+  it('says not delivered only where Allele gives a reason, whenever it last checked', () => {
+    for (const checked of [null, '2026-10-30T11:04:20Z', '2026-10-30T10:00:00Z']) {
+      expect(deliveryLine(asked, session('gone', checked), now))
+        .toBe('Not delivered · the session is gone, so nothing will read it')
+      expect(deliveryLine(asked, session('awaiting_input', checked), now))
+        .toBe('Not delivered · the session is waiting on a permission prompt')
+    }
+  })
+
+  it('says how long ago the session checked, while that is within the limit', () => {
+    expect(deliveryLine(asked, session('running', '2026-10-30T11:04:20Z'), now))
+      .toBe('Not read yet · the session last checked 40 sec ago')
+    expect(deliveryLine(asked, session(null, '2026-10-30T11:05:00Z'), now))
+      .toBe('Not read yet · the session last checked just now')
+  })
+
+  it('still calls fifteen minutes exactly a wait, not a stop', () => {
+    const atTheLimit = new Date(now.getTime() - MESSAGES_CHECKED_WITHIN_SECONDS * 1000)
+    expect(deliveryLine(asked, session('finished', atTheLimit.toISOString()), now))
+      .toBe('Not read yet · the session last checked 15 min ago')
+  })
+
+  it('calls a second past the limit a stop, though the minute shown is still fifteen', () => {
+    const past = new Date(now.getTime() - (MESSAGES_CHECKED_WITHIN_SECONDS + 1) * 1000)
+    expect(deliveryLine(asked, session('finished', past.toISOString()), now))
+      .toBe('Not read yet · the session hasn\'t checked for messages in 15 min, so its watcher may have stopped')
+  })
+
+  it('says the watcher may have stopped once the last check is past the limit', () => {
+    expect(MESSAGES_CHECKED_WITHIN_SECONDS).toBe(900)
+    expect(deliveryLine(asked, session('finished', '2026-10-30T10:47:00Z'), now))
+      .toBe('Not read yet · the session hasn\'t checked for messages in 18 min, so its watcher may have stopped')
+  })
+
+  it('says so with Allele unreachable or absent too: the check is the record\'s', () => {
+    expect(deliveryLine(asked, session('unreachable', '2026-10-30T10:47:00Z'), now))
+      .toContain('so its watcher may have stopped')
+    expect(deliveryLine(asked, session(null, '2026-10-30T10:47:00Z'), now))
+      .toContain('so its watcher may have stopped')
+  })
+
+  it('says nothing has checked on a review never checked', () => {
+    expect(deliveryLine(asked, session('running', null), now))
+      .toBe('Not read yet · nothing has checked for messages on this review')
+    expect(deliveryLine(asked, session(null, null), now))
+      .toBe('Not read yet · nothing has checked for messages on this review')
+  })
+
+  it('claims nothing about a check before the session read has answered', () => {
     expect(deliveryLine(asked, null, now)).toBe('Not read yet')
+    expect(deliveryLine(asked, undefined, now)).toBe('Not read yet')
   })
 
   it('says nothing about a reply, which is read by being on the page', () => {

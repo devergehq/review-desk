@@ -473,11 +473,15 @@ pub fn review_session(
     review: &review_desk_store::Review,
     reading: Option<&crate::allele::Reading>,
     fresh: Option<&review_desk_store::FreshSessionRequest>,
+    messages_checked_at: Option<Timestamp>,
     read_at: Timestamp,
 ) -> Value {
     json!({
         "review_id": review.id,
         "session_id": review.session_id,
+        // The record's: when `message list --unread --review` last ran for this review,
+        // which is a watcher's pass. Null when nothing has checked. DEV-1381.
+        "messages_checked_at": rfc3339_or_null(messages_checked_at),
         // The record's: the developer asked for a fresh session, and whether a dispatcher
         // has declined it. Null when nothing is asked, which includes once a new session
         // has answered it.

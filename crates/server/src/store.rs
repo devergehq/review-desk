@@ -535,6 +535,14 @@ impl Records {
         self.with(|store| store.fresh_session_request(review_id))
     }
 
+    /// When the review's session last checked for messages, if anything has. DEV-1381.
+    ///
+    /// Read only: `review-desk message list --unread --review` is what stamps it, and
+    /// nothing the page sends can.
+    pub fn messages_checked_at(&self, review_id: i64) -> Result<Option<i64>, ApiError> {
+        self.with(|store| store.messages_checked_at(review_id))
+    }
+
     /// The developer asks for a fresh session.
     pub fn request_fresh_session(&self, review_id: i64) -> Result<FreshSessionRequest, ApiError> {
         self.with(|store| store.request_fresh_session(review_id))

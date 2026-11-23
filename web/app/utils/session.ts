@@ -6,7 +6,7 @@
  * sentence here says what Allele said, and says nothing when there was no one to ask.
  */
 
-import type { FreshSessionState, ReviewMessage, SessionReading } from '~/types/desk'
+import type { FreshSessionState, ReviewMessage, ReviewSession, SessionReading } from '~/types/desk'
 
 import { agoLabel, durationLabel, secondsSince } from './format'
 
@@ -118,12 +118,22 @@ export function sessionAnswered(reading: SessionReading | null | undefined): boo
  *
  * **"Not delivered" only where there is a reason it cannot be**, from Allele: the session
  * is gone, or blocked on a permission prompt and so not reading anything. Otherwise an
- * unread message is "not read yet", because the review's watcher reads the desk every
- * twenty seconds or so and a message a few seconds old has simply not been picked up.
+ * unread message is "not read yet", and the line says when the review's session last
+ * checked for messages (DEV-1381), which is the record's and needs no Allele:
+ *
+ * | Last check | Says |
+ * |---|---|
+ * | within {@link MESSAGES_CHECKED_WITHIN_SECONDS} | how long ago |
+ * | longer ago than that | that the watcher may have stopped |
+ * | never | that nothing has checked |
+ *
+ * Before this it said *Not read yet* and nothing else, so a stopped watcher looked exactly
+ * like one between passes. Until the session read has answered at all it still says only
+ * that, rather than claim nothing has checked.
  */
 export function deliveryLine(
   message: ReviewMessage,
-  reading: SessionReading | null | undefined,
+  session: Pick<ReviewSession, 'reading' | 'messages_checked_at'> | null | undefined,
   now: Date = new Date(),
 ): string | null {
   if (message.author !== 'developer') return null
@@ -131,17 +141,34 @@ export function deliveryLine(
     const when = agoLabel(message.read_at, now) ?? 'at an unrecorded time'
     return `Read by ${message.read_by_session ?? 'the session'} ${when}`
   }
-  switch (reading?.status) {
+  switch (session?.reading?.status) {
     case 'gone':
       return 'Not delivered · the session is gone, so nothing will read it'
     case 'awaiting_input':
       return 'Not delivered · the session is waiting on a permission prompt'
-    case 'unreachable':
-      return 'Not read yet · Allele can\'t be reached to say whether the session can'
-    default:
-      return 'Not read yet'
   }
+  if (session == null) return 'Not read yet'
+  const waited = secondsSince(session.messages_checked_at, now)
+  if (waited == null) return 'Not read yet · nothing has checked for messages on this review'
+  if (waited <= MESSAGES_CHECKED_WITHIN_SECONDS) {
+    return `Not read yet · the session last checked ${agoLabel(session.messages_checked_at, now)}`
+  }
+  return `Not read yet · the session hasn't checked for messages in ${durationLabel(waited)}, `
+    + 'so its watcher may have stopped'
 }
+
+/**
+ * How long since the review's session last checked for messages before the page says its
+ * watcher may have stopped. DEV-1381.
+ *
+ * **Fifteen minutes**, decided by Patrick on 23 November 2026. With no draft waiting, a
+ * healthy watcher checks every `watch_interval_secs`, which is 300 seconds on the instance
+ * the real example came from: a question asked just after a pass waited nearly five
+ * minutes, and the watcher was fine. Fifteen minutes is three missed passes, and the same
+ * 900 seconds as the dispatcher's `reemit_after_secs`. Like the fresh-session limit below,
+ * it is a statement about the watcher, never a timeout: nothing is cancelled.
+ */
+export const MESSAGES_CHECKED_WITHIN_SECONDS = 15 * 60
 
 /**
  * How long a fresh session may wait to be picked up before the page says it has not been.
