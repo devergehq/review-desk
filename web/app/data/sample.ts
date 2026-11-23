@@ -2720,6 +2720,8 @@ export function sampleBackend(): DeskBackend {
         review_id: id,
         session_id: detail.review.session_id ?? null,
         fresh_session: null,
+        // No watcher has ever checked a sample review, for the reason there is no reading.
+        messages_checked_at: null,
         reading: source.session_readings?.[String(id)] ?? null,
       })
     },

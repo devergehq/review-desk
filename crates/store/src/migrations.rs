@@ -97,8 +97,10 @@
 //! parsed it, beside its raw body, with the flag that says whether it parsed — and, on every
 //! message, the tab it sits on and the finding it is about, backfilled from its step.
 //!
-//! Version 28 is when a developer's question was last handed to the review's session
-//! through Allele, and how many times (DEV-1383). Nullable and nought on every row already
+//! Version 28 is when a review's session last checked for the developer's messages
+//! (DEV-1381). Version 29 is when a developer's question was last handed to the review's
+//! session through Allele, and how many times (DEV-1383); it was written as 28 and
+//! renumbered when DEV-1381's 28 merged first. Nullable and nought on every row already
 //! held, so a message written before it reads as never handed over.
 
 use rusqlite::Connection;
@@ -2071,6 +2073,30 @@ CREATE UNIQUE INDEX suggestion_answers_one
     },
     Migration {
         version: 28,
+        name: "message-checks",
+        sql: r#"
+-- **When a review's session last checked for the developer's messages** — DEV-1381.
+--
+-- Before this an unread question said *Not read yet* and nothing else, so a watcher that
+-- had stopped looked exactly like one between passes. `message list --unread --review`,
+-- which a review's watcher runs on every pass, now stamps the review here, and the page
+-- says how long ago that was. The bare `--unread` sweep stamps nothing: it is a
+-- dispatcher's, not one review's session.
+--
+-- **Its own table rather than a column on `reviews`**, for migration 23's reason and one
+-- more: `reviews` is read everywhere, and this is written on every watcher pass, as often
+-- as every twenty seconds. One row per review, replaced in place.
+--
+-- **No backfill.** Nothing recorded a check before this, so every review starts never
+-- checked, which is what the page says.
+CREATE TABLE message_checks (
+    review_id  INTEGER PRIMARY KEY REFERENCES reviews (id) ON DELETE CASCADE,
+    checked_at INTEGER NOT NULL
+);
+"#,
+    },
+    Migration {
+        version: 29,
         name: "message-handover",
         sql: r#"
 -- **When Review Desk last asked Allele to hand a developer's question to the review's

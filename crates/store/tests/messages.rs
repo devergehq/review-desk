@@ -165,3 +165,73 @@ fn a_message_on_a_review_that_is_not_there_is_not_found() {
         Err(StoreError::NotFound { .. })
     ));
 }
+
+/*
+ * ---- When the review's session last checked for messages. Migration 28, DEV-1381. ----
+ */
+
+#[test]
+fn a_check_is_stamped_and_the_next_one_replaces_it() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let clock = review_desk_store::Clock::fixed(1_760_000_000);
+    let store = review_desk_store::Store::open_with_clock(common::db_path(&dir), clock.clone())
+        .expect("open store");
+    let id = review(&store, 514);
+    assert_eq!(store.messages_checked_at(id).unwrap(), None);
+
+    assert_eq!(store.record_message_check(id).unwrap(), 1_760_000_000);
+    clock.advance(300);
+    assert_eq!(store.record_message_check(id).unwrap(), 1_760_000_300);
+    assert_eq!(store.messages_checked_at(id).unwrap(), Some(1_760_000_300));
+}
+
+#[test]
+fn a_check_is_one_review_s_and_not_its_neighbour_s() {
+    let (_dir, store) = temp_store();
+    let watched = review(&store, 514);
+    let other = review(&store, 515);
+    store.record_message_check(watched).unwrap();
+    assert!(store.messages_checked_at(watched).unwrap().is_some());
+    assert_eq!(store.messages_checked_at(other).unwrap(), None);
+}
+
+#[test]
+fn a_check_is_not_activity_on_the_review() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let clock = review_desk_store::Clock::fixed(1_760_000_000);
+    let store = review_desk_store::Store::open_with_clock(common::db_path(&dir), clock.clone())
+        .expect("open store");
+    let id = review(&store, 514);
+    let before = store.get_review(id).unwrap().last_activity_at;
+    clock.advance(600);
+    store.record_message_check(id).unwrap();
+    assert_eq!(store.get_review(id).unwrap().last_activity_at, before);
+}
+
+#[test]
+fn a_check_on_a_review_that_is_not_there_is_not_found() {
+    let (_dir, store) = temp_store();
+    assert!(matches!(
+        store.record_message_check(9_999),
+        Err(StoreError::NotFound { .. })
+    ));
+}
+
+#[test]
+fn a_review_from_before_migration_28_was_never_checked() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = common::db_path(&dir);
+    {
+        let old = review_desk_store::Store::open_at_version(&path, 27).expect("open at 27");
+        assert_eq!(old.schema_version().unwrap(), 27);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO reviews (id, repo, pr, head_sha, round, created_at)
+                 VALUES (1, 'acme/portal', 514, 'c0ffee1', 1, 1000);",
+        )
+        .unwrap();
+    }
+    let migrated = review_desk_store::Store::open(&path).expect("reopen migrates");
+    assert!(migrated.schema_version().unwrap() >= 28);
+    assert_eq!(migrated.messages_checked_at(1).unwrap(), None);
+}

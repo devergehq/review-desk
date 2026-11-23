@@ -1,5 +1,5 @@
 //! Which of the developer's questions may be handed to the review's session through Allele,
-//! and what a handover records. Migration 28, DEV-1383.
+//! and what a handover records. Migration 29, DEV-1383.
 
 mod common;
 
@@ -202,15 +202,15 @@ fn oldest_first_across_reviews() {
     );
 }
 
-/// Migration 28 adds two columns, and what a machine upgrading has to get is every message it
+/// Migration 29 adds two columns, and what a machine upgrading has to get is every message it
 /// already held reading as never handed over — and the count's floor enforced.
 #[test]
 fn a_message_from_before_the_handover_reads_as_never_handed_over() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir);
-    const FROM: i64 = 27;
+    const FROM: i64 = 28;
     {
-        let old = Store::open_at_version(&path, FROM).expect("open at 27");
+        let old = Store::open_at_version(&path, FROM).expect("open at 28");
         assert_eq!(old.schema_version().unwrap(), FROM);
         let id = old
             .open_review("acme/portal", 514, "c0ffee1")

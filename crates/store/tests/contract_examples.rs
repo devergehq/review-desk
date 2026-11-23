@@ -2699,6 +2699,7 @@ fn every_response_example_can_be_produced_from_the_store() {
                     "declined_at": fresh.declined_at,
                     "declined_reason": fresh.declined_reason,
                 },
+                "messages_checked_at": store.messages_checked_at(review).expect("the check"),
                 "reading": null,
             }),
         );
@@ -2713,10 +2714,15 @@ fn every_response_example_can_be_produced_from_the_store() {
             .find_review_by_id(review)
             .expect("reading the review")
             .expect("the review");
+        // A watcher's pass, which is what stamps the check the example carries. DEV-1381.
+        let checked = store
+            .record_message_check(review)
+            .expect("recording a check");
         json!({
             "review_id": linked.id,
             "session_id": linked.session_id,
             "fresh_session": null,
+            "messages_checked_at": checked,
             "reading": null,
         })
     });

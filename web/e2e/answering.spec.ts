@@ -54,6 +54,28 @@ test('with Allele, the question is asked here and kept in the thread', async ({ 
   await expect(panel.locator('[data-author="developer"]')).toContainText('Is the attempt count safe on a retry?')
 })
 
+test('an unread question says when the session last checked, and when that was too long ago', async ({ page }) => {
+  /*
+   * DEV-1381. The question the test above asked is still unread. Nothing has checked yet;
+   * then a watcher's pass, the real command, stamps the review; then the browser's clock is
+   * twenty minutes on, past the fifteen-minute limit, without touching the record.
+   */
+  await signedIn(page.context(), twoWay)
+  await page.goto(`${twoWay.url}reviews/${reviewId}`)
+  const delivery = page.locator('[data-testid="conversation-panel"] [data-author="developer"] .delivery').first()
+  await expect(delivery).toHaveText('Not read yet · nothing has checked for messages on this review')
+
+  cli(twoWay.database, ['message', 'list', '--unread', '--review', String(reviewId)])
+  await page.reload()
+  await expect(delivery).toHaveText(/^Not read yet · the session last checked (just now|\d+ sec ago)$/)
+
+  await page.clock.install({ time: new Date(Date.now() + 20 * 60 * 1000) })
+  await page.reload()
+  await expect(delivery).toHaveText(
+    /^Not read yet · the session hasn't checked for messages in (19|20|21) min, so its watcher may have stopped$/,
+  )
+})
+
 test('with no Allele and nothing written by a session, it is read only', async ({ page }) => {
   await signedIn(page.context(), noAllele)
   await page.goto(`${noAllele.url}reviews/${reviewId}`)

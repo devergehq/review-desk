@@ -3259,13 +3259,24 @@ components:
     ReviewSession:
       type: object
       additionalProperties: false
-      required: [review_id, session_id, fresh_session, reading]
+      required: [review_id, session_id, fresh_session, messages_checked_at, reading]
       description: |
-        What `getReviewSession` serves. The first two fields are the record's; everything
+        What `getReviewSession` serves. Every field but `reading` is the record's; everything
         inside `reading` is Allele's answer, read at `reading.read_at`.
       properties:
         review_id: { type: integer, format: int64, minimum: 1 }
         session_id: { $ref: '#/components/schemas/ForeignId' }
+        messages_checked_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the review's session last checked for the developer's messages: the last
+            `review-desk message list --unread --review` for this review, which a watcher
+            runs on every pass. The bare `--unread` sweep does not set it. Null when nothing
+            has checked, which is every review before migration 28. DEV-1381.
+
+            The page words an unread question from it: how long ago, or, past fifteen
+            minutes, that the watcher may have stopped. Nothing the page sends can set it.
         fresh_session:
           oneOf:
             - $ref: '#/components/schemas/FreshSessionState'

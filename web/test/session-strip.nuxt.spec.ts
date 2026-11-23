@@ -46,7 +46,7 @@ beforeEach(async () => {
       fresh = { requested_at: new Date().toISOString(), declined_at: null, declined_reason: null }
     }
     if (url.includes('/session') || url.endsWith('/fresh-session')) {
-      return answer({ review_id: REVIEW, session_id: 'allele-old', fresh_session: fresh, reading: GONE })
+      return answer({ review_id: REVIEW, session_id: 'allele-old', fresh_session: fresh, messages_checked_at: null, reading: GONE })
     }
     return answer({}, 404)
   }))

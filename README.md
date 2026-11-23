@@ -817,7 +817,7 @@ within 15 s is read as uncertain, below, and the same rule applies to it as to A
 
 ```sh
 review-desk message list --unread                       # every review's undelivered messages
-review-desk message list --unread --review "$REVIEW"    # a watcher's own review
+review-desk message list --unread --review "$REVIEW"    # a watcher's own review; records the check
 review-desk message read --review "$REVIEW" --seq 3 --session "$SESSION"
 review-desk message reply --review "$REVIEW" --step draft --to 3 \
   --body "Regraded F13 to Blocker and sent the draft for sign-off again."
@@ -886,6 +886,24 @@ session quoted as something a person said.
 **A message nothing has read** says "not read yet" on the page, or "not delivered" when the
 strip gives a reason it cannot be: the session is gone, or blocked on a permission prompt.
 A Locus that does not know about messages leaves them unread, and that is all that happens.
+
+**"Not read yet" says when the review's session last checked.** DEV-1381. A watcher runs
+`message list --unread --review` on every pass, and that form, and only that form, stamps
+the review (migration 28; served as `messages_checked_at` on `GET /reviews/{id}/session`).
+The bare `--unread` sweep is a dispatcher's and stamps nothing.
+
+| Last check | The line under an unread question |
+| -- | -- |
+| within 15 minutes | *Not read yet · the session last checked 40 sec ago* |
+| longer ago | *Not read yet · the session hasn't checked for messages in 18 min, so its watcher may have stopped* |
+| never | *Not read yet · nothing has checked for messages on this review* |
+
+Fifteen minutes is three missed passes at a healthy watcher's 300-second cadence with no
+draft waiting, so a question asked just after a pass, which waits nearly five minutes, is
+never called stopped. `MESSAGES_CHECKED_WITHIN_SECONDS` in `web/app/utils/session.ts`.
+**It is fixed, not read from the watcher's configuration**, because Review Desk reads
+nothing of Locus's: an instance whose `watch_interval_secs` is over 300 seconds needs
+this raised to stay three passes, or a healthy watcher will read as stopped.
 
 #### Who is answering: two way, one way, or nobody
 

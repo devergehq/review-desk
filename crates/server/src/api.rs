@@ -1322,9 +1322,10 @@ impl Api {
             .as_deref()
             .and_then(|session_id| self.allele.read(session_id));
         let fresh = self.records.fresh_session_request(review_id)?;
+        let checked = self.records.messages_checked_at(review_id)?;
         Ok((
             200,
-            wire::review_session(&review, reading.as_ref(), fresh.as_ref(), now()),
+            wire::review_session(&review, reading.as_ref(), fresh.as_ref(), checked, now()),
         ))
     }
 
@@ -1359,9 +1360,10 @@ impl Api {
             )));
         }
         let fresh = self.records.request_fresh_session(review_id)?;
+        let checked = self.records.messages_checked_at(review_id)?;
         Ok((
             200,
-            wire::review_session(&review, Some(&reading), Some(&fresh), now()),
+            wire::review_session(&review, Some(&reading), Some(&fresh), checked, now()),
         ))
     }
 

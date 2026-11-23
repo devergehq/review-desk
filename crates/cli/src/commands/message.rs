@@ -30,6 +30,9 @@ pub enum MessageCommand {
     ///
     /// With `--unread` and no `--review`, every review's undelivered messages, oldest
     /// first: what a dispatcher reads to find a message whose session has gone.
+    ///
+    /// With `--unread --review`, a watcher's pass: it also records that the review was
+    /// checked just now, which the page shows under an unread question.
     List {
         /// One review. An unknown id is refused.
         #[arg(long, value_name = "ID")]
@@ -88,7 +91,16 @@ pub fn run(command: &MessageCommand) -> Result<Report> {
     match command {
         MessageCommand::List { review, unread } => {
             let messages = if *unread {
-                store.unread_messages(*review)?
+                let messages = store.unread_messages(*review)?;
+                // **A watcher's pass is what this is, so it is recorded** (DEV-1381): the
+                // page says how long ago one last checked, which tells a watcher between
+                // passes from one that has stopped. Only one review's: the bare sweep is a
+                // dispatcher's, and stamping every review from it would say each one's
+                // session had looked.
+                if let Some(id) = review {
+                    store.record_message_check(*id)?;
+                }
+                messages
             } else if let Some(id) = review {
                 store.messages(*id)?
             } else {

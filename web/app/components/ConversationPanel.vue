@@ -274,10 +274,10 @@ const headingId = useId()
               {{ message.body }}
             </p>
             <p
-              v-if="deliveryLine(message, session.data.value?.reading)"
+              v-if="deliveryLine(message, session.data.value)"
               class="delivery rd-meta"
             >
-              {{ deliveryLine(message, session.data.value?.reading) }}
+              {{ deliveryLine(message, session.data.value) }}
             </p>
           </li>
           <ConversationReply

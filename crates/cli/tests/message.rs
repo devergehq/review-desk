@@ -76,6 +76,30 @@ fn a_step_that_is_not_one_is_refused() {
     assert!(refused.to_string().contains("layer"), "{refused}");
 }
 
+// -- when the review's session last checked, DEV-1381 -------------------------------------
+
+#[test]
+fn a_watcher_s_pass_records_that_its_review_was_checked() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "514", "c0ffee1");
+    let id: i64 = review.parse().expect("an id");
+    assert_eq!(desk.store().messages_checked_at(id).unwrap(), None);
+
+    desk.json(&["message", "list", "--unread", "--review", &review]);
+    assert!(desk.store().messages_checked_at(id).unwrap().is_some());
+}
+
+#[test]
+fn the_bare_sweep_and_a_whole_conversation_record_no_check() {
+    let desk = Desk::new();
+    let review = open_review(&desk, "acme/portal", "514", "c0ffee1");
+    let id: i64 = review.parse().expect("an id");
+
+    desk.json(&["message", "list", "--unread"]);
+    desk.json(&["message", "list", "--review", &review]);
+    assert_eq!(desk.store().messages_checked_at(id).unwrap(), None);
+}
+
 // -- the answer contract, DEV-1332 -------------------------------------------------------
 
 const ANSWER: &str = r#"{
