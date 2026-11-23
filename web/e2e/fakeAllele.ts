@@ -30,7 +30,7 @@
  * the server never asks Allele, and the panel is not two way however Allele answers.
  */
 
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 
@@ -107,6 +107,8 @@ export async function fakeAllele(
     server.once('error', failed)
     server.listen(socket, () => done())
   })
+  /* Owner-only, as Allele makes it: the server hands a question to no other kind of socket. */
+  chmodSync(socket, 0o600)
 
   return {
     socket,

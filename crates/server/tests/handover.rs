@@ -48,6 +48,12 @@ impl FakeAllele {
             .expect("a temporary directory");
         let path = dir.path().join("a.sock");
         let listener = UnixListener::bind(&path).expect("binding a socket");
+        {
+            // Owner-only, as Allele makes it: a handover is sent to no other kind of socket.
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+                .expect("making the socket owner-only");
+        }
         let script = Arc::new(Mutex::new(Script {
             hello: HELLO.to_string(),
             prompt: prompt.to_string(),
@@ -99,6 +105,16 @@ fn converse(
                 r#"{{"result":"status","session":{{"session_id":"{SESSION}","state":"{}","state_age_secs":5}}}}"#,
                 script.lock().unwrap().state
             ),
+            // A session whose id starts `slow` takes a second to refuse, as a slow Allele does.
+            Some("sessions_prompt")
+                if request["session_id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("slow")) =>
+            {
+                prompts.lock().unwrap().push(request.clone());
+                thread::sleep(Duration::from_secs(1));
+                r#"{"result":"error","code":"session_busy","message":"slow"}"#.to_string()
+            }
             Some("sessions_prompt") => {
                 prompts.lock().unwrap().push(request.clone());
                 let (delay, reply) = {
@@ -329,4 +345,58 @@ fn with_no_allele_socket_nothing_is_attempted_and_nothing_is_said() {
     assert!(said.lock().unwrap().is_empty());
     assert_eq!(count(&harness, review_id, seq), 0);
     assert!(!absent.exists(), "and nothing made a socket there");
+}
+
+/// Review F1: Allele pasted the notice and did not see the session start. That may be in front
+/// of the session, so it counts as a handover and is not pasted again at the next sweep.
+#[test]
+fn an_unconfirmed_delivery_counts_and_is_not_pasted_again_within_two_minutes() {
+    let allele = FakeAllele::new(&error("prompt_delivery_unconfirmed"));
+    let (harness, review_id, _) = desk(&allele.path, OFTEN);
+    let seq = ask(&harness, review_id, "Why?")["seq"].as_i64().unwrap();
+
+    eventually("the first try", || count(&harness, review_id, seq) == 1);
+    thread::sleep(OFTEN * 6);
+    assert_eq!(allele.prompts().len(), 1, "not pasted again every sweep");
+    assert_eq!(count(&harness, review_id, seq), 1);
+}
+
+/// Review F2: a question just asked is not held behind a sweep of slow candidates.
+#[test]
+fn a_new_question_goes_ahead_of_a_slow_sweep() {
+    let allele = FakeAllele::new(PROMPTED);
+    let (harness, review_id, _) = desk(&allele.path, OFTEN);
+    for pr in 1..=4 {
+        let slow = harness
+            .store
+            .open_review("acme/slow", pr, "c0ffee1")
+            .expect("a slow review")
+            .review
+            .id;
+        harness
+            .store
+            .set_review_links(
+                slow,
+                ReviewLinks {
+                    session_id: Some(format!("slow-{pr}")),
+                    ..Default::default()
+                },
+            )
+            .expect("linking");
+        harness
+            .store
+            .ask_session(slow, review_desk_store::ReviewLayerName::Draft, "Slow?")
+            .expect("asking");
+    }
+    // The sweep has begun on the four, each of which takes a second.
+    eventually("the sweep to start", || !allele.prompts().is_empty());
+
+    let started = Instant::now();
+    let seq = ask(&harness, review_id, "Why?")["seq"].as_i64().unwrap();
+    eventually("the handover", || count(&harness, review_id, seq) == 1);
+    assert!(
+        started.elapsed() < Duration::from_millis(2500),
+        "waited {:?} behind the sweep",
+        started.elapsed()
+    );
 }

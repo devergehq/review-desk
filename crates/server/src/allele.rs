@@ -1,6 +1,6 @@
 //! What a review's Allele session is doing, read from Allele's control socket.
 //!
-//! **The one thing this server asks another program, and it only ever asks.** Review Desk
+//! **The one other program this server talks to, and almost all of it is asking.** Review Desk
 //! records which Allele session has each review (`session_id`); Allele knows whether that
 //! session is working, blocked on a permission prompt, or gone. Until now nothing joined
 //! the two, so a stalled review could not say why and the draft page guessed from forty
@@ -196,10 +196,22 @@ fn exchange(socket: &Path, request: &serde_json::Value) -> Result<String, String
     connection.ask(request)
 }
 
+/// The longest answer line read from Allele. Its answers are a few hundred bytes; anything
+/// past this is not an answer, and reading it would let a broken socket grow a buffer forever.
+const MOST_ANSWER_BYTES: usize = 64 * 1024;
+
 /// One connection to Allele's socket, on which each request line is answered by one line.
+///
+/// **`timeout` is a deadline for the whole connection, not for each read** (DEV-1383 review,
+/// F3): every request and answer on it shares the one budget, so an Allele that answers a
+/// byte at a time, or a handover that says hello and then prompts, still costs at most
+/// `timeout` from connecting.
 #[cfg(unix)]
 struct Connection {
-    reader: std::io::BufReader<std::os::unix::net::UnixStream>,
+    stream: std::os::unix::net::UnixStream,
+    /// Bytes read past the end of the last answer line.
+    pending: Vec<u8>,
+    deadline: std::time::Instant,
     timeout: Duration,
 }
 
@@ -208,35 +220,73 @@ impl Connection {
     fn open(socket: &Path, timeout: Duration) -> Result<Self, String> {
         use std::os::unix::net::UnixStream;
 
+        let deadline = std::time::Instant::now() + timeout;
         let stream = UnixStream::connect(socket)
             .map_err(|error| format!("Allele's socket refused the connection: {error}"))?;
-
-        // Both directions, so a socket that accepts and never reads cannot hold a write either.
-        stream
-            .set_read_timeout(Some(timeout))
-            .and_then(|()| stream.set_write_timeout(Some(timeout)))
-            .map_err(|error| error.to_string())?;
-
         Ok(Connection {
-            reader: std::io::BufReader::new(stream),
+            stream,
+            pending: Vec::new(),
+            deadline,
             timeout,
         })
     }
 
-    fn ask(&mut self, request: &serde_json::Value) -> Result<String, String> {
-        use std::io::{BufRead, Write};
+    /// What is left of the deadline, or the error that says it has passed.
+    fn left(&self) -> Result<Duration, String> {
+        let left = self
+            .deadline
+            .saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            return Err(self.late());
+        }
+        Ok(left)
+    }
 
-        writeln!(self.reader.get_mut(), "{request}")
+    fn late(&self) -> String {
+        format!("Allele did not answer within {} s", self.timeout.as_secs())
+    }
+
+    fn ask(&mut self, request: &serde_json::Value) -> Result<String, String> {
+        use std::io::{Read, Write};
+
+        // Both directions, so a socket that accepts and never reads cannot hold a write either.
+        let left = self.left()?;
+        self.stream
+            .set_write_timeout(Some(left))
+            .map_err(|error| error.to_string())?;
+        writeln!(self.stream, "{request}")
             .map_err(|error| format!("could not ask Allele: {error}"))?;
 
-        let mut line = String::new();
-        match self.reader.read_line(&mut line) {
-            Ok(0) => Err("Allele closed the connection without answering".to_string()),
-            Ok(_) => Ok(line),
-            Err(error) => Err(format!(
-                "Allele did not answer within {} s: {error}",
-                self.timeout.as_secs()
-            )),
+        let mut chunk = [0_u8; 4096];
+        loop {
+            if let Some(end) = self.pending.iter().position(|byte| *byte == b'\n') {
+                let line: Vec<u8> = self.pending.drain(..=end).collect();
+                return String::from_utf8(line)
+                    .map_err(|_| "Allele's answer was not text".to_string());
+            }
+            if self.pending.len() > MOST_ANSWER_BYTES {
+                return Err(format!(
+                    "Allele's answer ran past {MOST_ANSWER_BYTES} bytes without ending"
+                ));
+            }
+            let left = self.left()?;
+            self.stream
+                .set_read_timeout(Some(left))
+                .map_err(|error| error.to_string())?;
+            match self.stream.read(&mut chunk) {
+                Ok(0) => return Err("Allele closed the connection without answering".to_string()),
+                Ok(read) => self.pending.extend_from_slice(&chunk[..read]),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    return Err(self.late())
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(format!("could not read Allele's answer: {error}")),
+            }
         }
     }
 }
@@ -382,7 +432,9 @@ impl Allele {
 ///
 /// The refusals are DEV-1382's codes, folded to what Review Desk does about each: try again
 /// on the next sweep, hold off until the session's state changes, or note an Allele too old
-/// to be asked. **Only [`Handed::Prompted`] is recorded.**
+/// to be asked. **[`Handed::Prompted`] and [`Handed::Uncertain`] are recorded**: the second
+/// because the notice may well be in front of the session, so the two-minute spacing and the
+/// cap of three have to apply to it too (DEV-1383 review, F1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Handed {
     /// Allele put the notice in front of the session and saw it start.
@@ -398,10 +450,18 @@ pub enum Handed {
     /// An Allele that has no `sessions_prompt` to give: one from before `allele.ext/1`, one
     /// that does not know the `prompt` capability, or one that did not grant it.
     OlderAllele(String),
-    /// The socket is there and did not answer, or closed before it did.
+    /// The socket is there and could not be asked: it refused, or did not answer the
+    /// `hello`. Nothing was sent to the session. The next sweep tries again.
     Unreachable(String),
-    /// Anything else Allele said, as it said it — `prompt_delivery_unconfirmed`, say.
-    /// Nothing is recorded and the next sweep tries again.
+    /// **The `sessions_prompt` was sent and what came back does not say it was not
+    /// delivered**: `prompt_delivery_unconfirmed` (DEV-1382: pasted, but Allele did not see
+    /// the session start), a code this does not know, an answer that is not one, or no
+    /// answer before the deadline. Recorded as a handover, so it is not pasted again within
+    /// two minutes, nor more than three times.
+    Uncertain(String),
+    /// Allele refused before anything reached the session, for a reason not named above —
+    /// an Allele that is not one, or a `bad_request`. Nothing is recorded and the next sweep
+    /// tries again.
     Refused(String),
 }
 
@@ -411,8 +471,16 @@ impl Allele {
     /// **Blocks for up to [`PROMPT_TIMEOUT`]**, so it is for the handover thread and nothing
     /// else. One connection: an `allele.ext/1` `hello` asking for `observe` and `prompt`,
     /// then the `sessions_prompt` itself.
+    ///
+    /// **Only to Allele's own kind of socket** — owner-only, as [`Allele::verify_go_ahead`]
+    /// asks of one (DEV-1383 review, F4): this is the one request that puts anything in front
+    /// of a session, and a listener that is not Allele could otherwise say `prompted` and
+    /// spend a question's three handovers.
     pub fn prompt(&self, session_id: &str, notice: &str) -> Option<Handed> {
         let socket = self.socket.as_deref().filter(|socket| socket.exists())?;
+        if let Err(why) = owners_socket(socket) {
+            return Some(Handed::Refused(why));
+        }
         Some(hand_over(socket, session_id, notice))
     }
 }
@@ -461,15 +529,16 @@ fn hand_over(socket: &Path, session_id: &str, notice: &str) -> Handed {
         "session_id": session_id,
         "prompt": notice,
     });
+    // From here the notice may be in front of the session, so nothing below is "not sent".
     let answered = match connection.ask(&request).map(|line| parsed(&line)) {
         Ok(Some(value)) => value,
-        Ok(None) => return Handed::Refused("Allele's answer was not JSON".to_string()),
-        Err(detail) => return Handed::Unreachable(detail),
+        Ok(None) => return Handed::Uncertain("Allele's answer was not JSON".to_string()),
+        Err(detail) => return Handed::Uncertain(detail),
     };
     match answered["result"].as_str() {
         Some("prompted") => Handed::Prompted,
         Some("error") => refusal(&answered),
-        _ => Handed::Refused("Allele's answer was not prompted or an error".to_string()),
+        _ => Handed::Uncertain("Allele's answer was not prompted or an error".to_string()),
     }
 }
 
@@ -504,7 +573,11 @@ fn refusal(value: &serde_json::Value) -> Handed {
         // refuses it whole.
         "capability_not_granted" => Handed::OlderAllele(said(value)),
         "bad_request" if message.contains("sessions_prompt") => Handed::OlderAllele(said(value)),
-        _ => Handed::Refused(said(value)),
+        // DEV-1382 answers `bad_request` before it writes anything: an empty or long prompt.
+        "bad_request" => Handed::Refused(said(value)),
+        // `prompt_delivery_unconfirmed`, and any code DEV-1382 did not name: it may have been
+        // pasted.
+        _ => Handed::Uncertain(said(value)),
     }
 }
 
@@ -616,6 +689,7 @@ mod tests {
             .expect("a temporary directory");
         let path = dir.path().join("a.sock");
         let listener = UnixListener::bind(&path).expect("binding a socket");
+        owner_only(&path);
         let (sent, heard) = std::sync::mpsc::channel();
         thread::spawn(move || {
             if let Ok((stream, _)) = listener.accept() {
@@ -634,6 +708,13 @@ mod tests {
             }
         });
         (dir, path, heard)
+    }
+
+    /// Mode 0600, as Allele makes its socket, which is what [`Allele::prompt`] asks for.
+    fn owner_only(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .expect("making the socket owner-only");
     }
 
     const HELLO: &str = r#"{"result":"hello","contract_versions":["allele.ext/1"],"epoch":"e1","granted":["observe","prompt"],"dispatch_limits":null}"#;
@@ -700,7 +781,19 @@ mod tests {
             ),
             (
                 r#"{"result":"error","code":"prompt_delivery_unconfirmed","message":"never started"}"#,
-                Handed::Refused("prompt_delivery_unconfirmed: never started".to_string()),
+                Handed::Uncertain("prompt_delivery_unconfirmed: never started".to_string()),
+            ),
+            (
+                r#"{"result":"error","code":"a_code_allele_adds_later","message":"?"}"#,
+                Handed::Uncertain("a_code_allele_adds_later: ?".to_string()),
+            ),
+            (
+                r#"{"result":"error","code":"bad_request","message":"prompt starts with /"}"#,
+                Handed::Refused("bad_request: prompt starts with /".to_string()),
+            ),
+            (
+                "not json",
+                Handed::Uncertain("Allele's answer was not JSON".to_string()),
             ),
         ];
         for (reply, expected) in cases {
@@ -751,6 +844,53 @@ mod tests {
             None
         );
         assert_eq!(Allele::none().prompt("s1", "n"), None);
+    }
+
+    /// F3 of the review: the fifteen seconds cover the whole handover, not each read.
+    #[test]
+    fn a_handover_that_is_answered_a_byte_at_a_time_still_ends_at_the_deadline() {
+        let dir = tempfile::Builder::new()
+            .prefix("rd")
+            .tempdir_in("/tmp")
+            .expect("a temporary directory");
+        let path = dir.path().join("a.sock");
+        let listener = UnixListener::bind(&path).expect("binding a socket");
+        thread::spawn(move || {
+            if let Ok((stream, _)) = listener.accept() {
+                let mut stream = stream;
+                // Never a newline, and never quiet for as long as one read's timeout.
+                for _ in 0..200 {
+                    if stream.write_all(b" ").is_err() {
+                        return;
+                    }
+                    thread::sleep(Duration::from_millis(50));
+                }
+            }
+        });
+
+        let started = Instant::now();
+        let mut connection =
+            Connection::open(&path, Duration::from_millis(400)).expect("connecting");
+        let answered = connection.ask(&serde_json::json!({ "op": "hello" }));
+        assert!(answered.is_err(), "{answered:?}");
+        assert!(
+            started.elapsed() < Duration::from_millis(900),
+            "took {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// F4 of the review: a socket anyone can open is not Allele's, and is sent no notice.
+    #[test]
+    fn a_socket_that_is_not_owner_only_is_sent_no_notice() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_dir, path, heard) = allele_conversing(&[HELLO]);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o666)).unwrap();
+        assert!(matches!(
+            Allele::at(&path).prompt("s1", "n"),
+            Some(Handed::Refused(_))
+        ));
+        drop(heard);
     }
 
     #[test]

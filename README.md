@@ -799,15 +799,18 @@ number and its tab, and the three commands below; the session reads the question
 with `message list`, so the record stays the one source of truth and `message read` still
 marks delivery. The server sends it off the request, so asking never waits on Allele, and
 again on a sweep every 15 seconds for an `ask` that is still unread: never more than three
-times, and no sooner than two minutes after the last. A send-back is never handed over.
+times, and no sooner than two minutes after the last. A question just asked goes ahead of
+the rest of a sweep, and the whole of one handover, `hello` and prompt, is held to 15
+seconds. A send-back is never handed over.
 
 | Allele answers | Review Desk |
 | -- | -- |
 | `prompted` | records `handed_over_at` and adds one to `handed_over_count` |
+| `prompt_delivery_unconfirmed`, a code it does not know, or no answer once the prompt was sent | records it the same way, because the notice may be in front of the session: so it is not pasted again within two minutes, nor more than three times |
 | `session_busy` | records nothing, and tries again on the next sweep |
 | `session_awaiting_person`, `session_not_live`, `not_dispatched`, `session_not_found` | records nothing, and does not try that session again until Allele reports a different state for it |
 | an Allele without `sessions_prompt` | records nothing, and says so once on `serve`'s standard error |
-| no socket, or no answer within 15 s | nothing |
+| no socket, a socket that is not owner-only (0600), or no answer to `hello` within 15 s | nothing |
 
 ```sh
 review-desk message list --unread                       # every review's undelivered messages

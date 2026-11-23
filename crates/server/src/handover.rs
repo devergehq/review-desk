@@ -29,7 +29,8 @@
 //! fifteen seconds a prompt may take ([`crate::allele::PROMPT_TIMEOUT`]) is never spent on a
 //! request someone is waiting for.
 //!
-//! What Allele answers decides what happens next ([`Handed`]): only `prompted` is recorded;
+//! What Allele answers decides what happens next ([`Handed`]): `prompted`, and any answer
+//! after the prompt was sent that does not say it was not delivered, is recorded;
 //! a busy session is tried again on the next sweep; a session waiting on a person, or one
 //! Allele cannot deliver to, is held until Allele reports a different state for it; an Allele
 //! too old to have `sessions_prompt` is said once per server start; and no socket is silent.
@@ -38,7 +39,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -94,6 +95,13 @@ impl fmt::Debug for Say {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Say(..)")
     }
+}
+
+/// Whether the thread was told to stop while it was busy.
+#[derive(Debug, PartialEq, Eq)]
+enum Heard {
+    Nothing,
+    Stop,
 }
 
 /// What reaches the handover thread.
@@ -189,7 +197,9 @@ impl Handover {
                 Ok(Nudge::Asked { review_id, seq }) => self.offer(review_id, seq),
                 Ok(Nudge::Stop) | Err(RecvTimeoutError::Disconnected) => return,
                 Err(RecvTimeoutError::Timeout) => {
-                    self.sweep();
+                    if self.sweep_listening(receiver) == Heard::Stop {
+                        return;
+                    }
                     next_sweep = Instant::now() + every;
                 }
             }
@@ -198,12 +208,39 @@ impl Handover {
 
     /// Hand over every question that may be handed over now, oldest first.
     pub fn sweep(&mut self) {
+        let (_sender, receiver) = mpsc::channel();
+        self.sweep_listening(&receiver);
+    }
+
+    /// The sweep, answering the developer between one candidate and the next.
+    ///
+    /// **A question just asked goes ahead of the rest of the sweep** (DEV-1383 review, F2).
+    /// Each candidate can take up to [`crate::allele::PROMPT_TIMEOUT`] against a slow Allele,
+    /// so a sweep over four of them could otherwise hold a new question for a minute — the
+    /// wait this module exists to remove. A stop is heard here too, so shutting down waits
+    /// for one candidate at most rather than a whole sweep.
+    fn sweep_listening(&mut self, receiver: &Receiver<Nudge>) -> Heard {
         let Ok(candidates) = self.records.messages_to_hand_over() else {
-            return;
+            return Heard::Nothing;
         };
         for candidate in candidates {
+            if self.answer_nudges(receiver) == Heard::Stop {
+                return Heard::Stop;
+            }
             // Asked again, under the rule, because the one before may have changed it.
             self.offer(candidate.message.review_id, candidate.message.seq);
+        }
+        self.answer_nudges(receiver)
+    }
+
+    /// Offer every question asked since the last look, without waiting for more.
+    fn answer_nudges(&mut self, receiver: &Receiver<Nudge>) -> Heard {
+        loop {
+            match receiver.try_recv() {
+                Ok(Nudge::Asked { review_id, seq }) => self.offer(review_id, seq),
+                Ok(Nudge::Stop) | Err(TryRecvError::Disconnected) => return Heard::Stop,
+                Err(TryRecvError::Empty) => return Heard::Nothing,
+            }
         }
     }
 
@@ -248,7 +285,9 @@ impl Handover {
             return;
         };
         match handed {
-            Handed::Prompted => {
+            // An uncertain answer is recorded too: the notice may be in front of the
+            // session, so the two minutes and the three times apply to it (review, F1).
+            Handed::Prompted | Handed::Uncertain(_) => {
                 let _ = self.records.record_handover(message.review_id, message.seq);
             }
             Handed::AwaitingPerson | Handed::NotLive(_) => {
@@ -272,6 +311,26 @@ impl Handover {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// DEV-1382 (allele#320) refuses a prompt that is over 4,000 characters, starts with `/`,
+    /// `!` or `#`, or carries a control character other than newline and tab.
+    #[test]
+    fn every_notice_is_one_allele_will_type() {
+        for tab in [
+            ReviewTab::Overview,
+            ReviewTab::Understanding,
+            ReviewTab::Findings,
+            ReviewTab::Draft,
+            ReviewTab::Replies,
+        ] {
+            let text = notice(i64::MAX, i64::MAX, tab);
+            assert!(text.chars().count() <= 4000);
+            assert!(!text.starts_with(['/', '!', '#']));
+            assert!(!text
+                .chars()
+                .any(|c| c.is_control() && c != '\n' && c != '\t'));
+        }
+    }
 
     #[test]
     fn the_notice_is_the_ticket_s_text_with_the_review_the_seq_and_the_tab() {
