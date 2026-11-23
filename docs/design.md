@@ -116,8 +116,9 @@ first column. Seven rules it keeps, each in the file that holds it:
 - **An address can ask for a selection**: `?pr=acme/portal%23901` selects that pull request
   in the tab that draws it. It is how the list is reached for a row with no round. It is
   taken once, on arrival: the address is replaced with that tab's `?view=`, so the find field
-  cannot move the tab and the same sidebar row clicked again is a navigation of its own.
-  `selectionFromQuery` and `viewHolding`.
+  cannot move the tab and the same sidebar row clicked again is a navigation of its own. A
+  repository filter or find text that hides the row is cleared rather than leaving it off the
+  page, and choosing a tab drops an ask nothing took. `selectionFromQuery` and `viewHolding`.
 - **The preview beside it draws the selected row from the record**: the bottom line from
   `bottomLine` in `web/app/utils/theCase.ts` — the brief's headline and `answerFacts`, and the
   one helper the Overview draws it with too — the state, the findings, what was not checked,

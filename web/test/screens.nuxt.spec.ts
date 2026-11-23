@@ -3095,6 +3095,45 @@ describe('a pull request nobody has picked up', () => {
     expect(page.find('[role="tab"][aria-selected="true"]').text()).toMatch(/^Being reviewed/)
   })
 
+  it('lifts a repository filter that hides the pull request the address asks for', async () => {
+    /* Self-review round 2, F3: the ask was never found, and the click went nowhere. */
+    const page = await shown(Inbox)
+    await page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/portal'))!.trigger('click')
+    await settle(page)
+    await page.vm.$router.push('/?pr=acme%2Fbilling-api%23104')
+    await vi.waitFor(async () => {
+      await settle(page)
+      expect(page.findAll('[role="radio"]').find(one => one.text() === 'All repositories')!
+        .attributes('aria-checked')).toBe('true')
+      expect(page.find('#panel-reviewing .queue-line--selected').text()).toContain('#104')
+    }, { timeout: 5000 })
+  })
+
+  it('clears find text that hides the pull request the address asks for', async () => {
+    /* Self-review round 2, F6: the first row was selected and previewed in its place. */
+    const page = await shown(Inbox)
+    await page.find('input#start').setValue('409')
+    await settle(page)
+    await page.vm.$router.push('/?pr=acme%2Fbilling-api%23104')
+    await vi.waitFor(async () => {
+      await settle(page)
+      expect((page.find('input#start').element as HTMLInputElement).value).toBe('')
+      expect(page.find('#panel-reviewing .queue-line--selected').text()).toContain('#104')
+    }, { timeout: 5000 })
+  })
+
+  it('drops an ask nothing took when a tab is chosen', async () => {
+    /* Self-review round 2, F4: it rode along on every tab the reader chose. */
+    const page = await shown(Inbox, { route: '/?pr=acme%2Fportal%2399999' })
+    await page.findAll('[role="tab"]').find(one => one.text().startsWith('Being reviewed'))!.trigger('click')
+    await vi.waitFor(async () => {
+      await settle(page)
+      const query = page.vm.$router.currentRoute.value.query
+      expect(query.pr).toBeUndefined()
+      expect(query.view).toBe('reviewing')
+    }, { timeout: 5000 })
+  })
+
   it('selects the first row when the address names a pull request no tab draws', async () => {
     const page = await shown(Inbox, { route: '/?pr=acme%2Fportal%2399999' })
     expect(page.find('[role="tab"][aria-selected="true"]').text()).toMatch(/^Waiting on you/)

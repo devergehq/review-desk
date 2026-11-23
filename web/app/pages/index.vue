@@ -1396,11 +1396,39 @@ const doneRows = computed(() => {
 const route = useRoute()
 const router = useRouter()
 
+/**
+ * Every tab's row keys before the find field narrows them, which is what `?pr=` is found in.
+ * The repository filter has narrowed them already; the arrival watch below lifts it when it
+ * hides the asked-for row.
+ */
+const allKeys = computed<Record<ListView, Array<{ key: string }>>>(() => ({
+  waiting: rows.value.needsYou.map(row => ({ key: row.key })),
+  reviewing: [...rows.value.withAgent, ...rows.value.requested].map(item => ({ key: prKey(item) })),
+  author: rows.value.withAuthor.map(item => ({ key: prKey(item) })),
+  own: rows.value.ownPrs.map(item => ({ key: prKey(item) })),
+  done: doneRows.value.map(item => ({ key: `${item.review.repo}#${item.review.pr}` })),
+  every: [],
+}))
+
+/** The pull request the address asks to have selected (`?pr=`, DEV-1373), or null. */
+const askedPr = computed(() => selectionFromQuery(route.query.pr))
+
+/*
+ * **While `?pr=` waits to be taken, the tab is the one that holds it**, so a sidebar click
+ * does not draw *Waiting on you* for the frame before the replace below lands (self-review
+ * round 2, F5). Found in the rows before the find field, so typing cannot move it (F1).
+ *
+ * **Choosing a tab drops `pr`** (F4): an ask that rode along on a tab the reader chose would
+ * move them off it the next time the inbox brought that pull request in.
+ */
 const view = computed<ListView>({
-  get: () => viewFromQuery(route.query.view),
+  get: () => (askedPr.value && viewHolding(allKeys.value, askedPr.value))
+    || viewFromQuery(route.query.view),
   set: (next) => {
     if (next === view.value) return
-    void router.push({ query: { ...route.query, view: next === 'waiting' ? undefined : next } })
+    void router.push({
+      query: { ...route.query, view: next === 'waiting' ? undefined : next, pr: undefined },
+    })
   },
 })
 
@@ -1569,16 +1597,6 @@ watch(currentRows, (list) => {
   if (!list.some(row => row.key === selected.value)) selected.value = list[0]?.key ?? null
 }, { immediate: true })
 
-/** Every tab's row keys before the find field narrows them, which is what `?pr=` is found in. */
-const allKeys = computed<Record<ListView, Array<{ key: string }>>>(() => ({
-  waiting: rows.value.needsYou.map(row => ({ key: row.key })),
-  reviewing: [...rows.value.withAgent, ...rows.value.requested].map(item => ({ key: prKey(item) })),
-  author: rows.value.withAuthor.map(item => ({ key: prKey(item) })),
-  own: rows.value.ownPrs.map(item => ({ key: prKey(item) })),
-  done: doneRows.value.map(item => ({ key: `${item.review.repo}#${item.review.pr}` })),
-  every: [],
-}))
-
 /**
  * **`?pr=` is taken once, on arrival** (DEV-1373). The sidebar links a row with no round as
  * `/?pr=acme/portal%23901`. Once the inbox holds that pull request, it is selected and the
@@ -1591,12 +1609,22 @@ const allKeys = computed<Record<ListView, Array<{ key: string }>>>(() => ({
  * moved on, so clicking the same sidebar row again went nowhere (F2). Taken and dropped,
  * every later click on that row is a navigation of its own.
  *
+ * Round 2 found two ways the row could still be off the page when the ask was taken. **The
+ * repository filter hid it** (F3): the ask was never found, and the click went nowhere. So a
+ * filter on another repository is lifted. **The find field hid it** (F6): the first row was
+ * selected in its place. So the field is cleared.
+ *
  * An address naming a pull request no tab holds is left as it is, and the first row selected.
  */
-watch([() => selectionFromQuery(route.query.pr), allKeys], ([asked, keys]) => {
+watch([askedPr, allKeys], ([asked, keys]) => {
   if (!asked) return
   const holding = viewHolding(keys, asked)
-  if (!holding) return
+  if (!holding) {
+    const askedRepo = asked.slice(0, asked.lastIndexOf('#'))
+    if (repo.value !== ALL_REPOSITORIES && repo.value !== askedRepo) repo.value = ALL_REPOSITORIES
+    return
+  }
+  if (!viewRows.value[holding].some(row => row.key === asked)) link.value = ''
   selected.value = asked
   void router.replace({
     query: { ...route.query, view: holding === 'waiting' ? undefined : holding, pr: undefined },
