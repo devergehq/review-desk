@@ -3067,11 +3067,32 @@ describe('a pull request nobody has picked up', () => {
      * and the preview draws it rather than the first row.
      */
     const page = await shown(Inbox, { route: '/?pr=acme%2Fbilling-api%23104' })
-    expect(page.find('[role="tab"][aria-selected="true"]').text()).toMatch(/^Being reviewed/)
+    /* The tab follows the replaced address, which lands a few ticks after the first read. */
+    await vi.waitFor(() =>
+      expect(page.find('[role="tab"][aria-selected="true"]').text()).toMatch(/^Being reviewed/))
     const selected = page.findAll('#panel-reviewing .queue-line--selected')
     expect(selected).toHaveLength(1)
     expect(selected[0]!.text()).toContain('#104')
     expect(page.find('[data-testid="list-preview"]').attributes('aria-label')).toBe('#104, previewed')
+  })
+
+  it('takes the address’s pull request once, so the find field cannot move the tab', async () => {
+    /*
+     * Self-review round 1, F1 and F2. The tab was worked out from `?pr=` on every render, over
+     * rows the find field narrows, so typing `409` flipped the list to an empty *Waiting on
+     * you*; and the address kept `?pr=` after `J`, so clicking that sidebar row again was a
+     * navigation to where the reader already was. Taken once and replaced, it is neither.
+     */
+    const page = await shown(Inbox, { route: '/?pr=acme%2Fbilling-api%23104' })
+    await vi.waitFor(() => {
+      const query = page.vm.$router.currentRoute.value.query
+      expect(query.pr, 'the ask is taken').toBeUndefined()
+      expect(query.view, 'and the tab it found is the address now').toBe('reviewing')
+    })
+
+    await page.find('input#start').setValue('409')
+    await settle(page)
+    expect(page.find('[role="tab"][aria-selected="true"]').text()).toMatch(/^Being reviewed/)
   })
 
   it('selects the first row when the address names a pull request no tab draws', async () => {

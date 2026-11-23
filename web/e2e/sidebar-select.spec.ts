@@ -65,7 +65,8 @@ test('clicking a not-started row in the sidebar selects it in the list', async (
   await expect(row).toBeFocused()
 
   await row.click()
-  await expect(page).toHaveURL(`${seeded}?pr=acme/portal%23${pr}`)
+  /* Taken on arrival, and replaced with the tab that draws it. */
+  await expect(page).toHaveURL(`${seeded}?view=reviewing`)
 
   await expect(page.getByRole('tab', { name: /^Being reviewed/ })).toHaveAttribute('aria-selected', 'true')
   const selected = page.locator('#panel-reviewing .queue-line--selected')
@@ -79,4 +80,21 @@ test('loading the selection address directly selects the same row', async ({ pag
   await page.goto(`${seeded}?pr=acme%2Fportal%23${pr}`)
   await expect(page.locator('#panel-reviewing .queue-line--selected')).toContainText(`#${pr}`)
   await expect(page.getByTestId('list-preview')).toHaveAttribute('aria-label', `#${pr}, previewed`)
+})
+
+test('the same row clicked again after K has moved the selection selects it again', async ({ page }) => {
+  /* Self-review round 1, F2: while the address still said `?pr=`, this click went nowhere. */
+  await page.goto(`${seeded}?pr=acme%2Fportal%23${pr}`)
+  const selected = page.locator('#panel-reviewing .queue-line--selected')
+  await expect(selected).toContainText(`#${pr}`)
+
+  await page.locator('body').press('k')
+  await expect(selected).not.toContainText(`#${pr}`)
+
+  const group = page.locator('#sidebar .group--being_reviewed')
+  if (!(await group.locator('details').evaluate(fold => (fold as HTMLDetailsElement).open))) {
+    await group.locator('summary').click()
+  }
+  await group.locator('.side-row').filter({ hasText: `#${pr}` }).click()
+  await expect(selected).toContainText(`#${pr}`)
 })

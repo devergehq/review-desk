@@ -7,7 +7,6 @@ import {
   numbersSaid,
   rowMatches,
   selectionFromQuery,
-  selectionOn,
   selectionQuery,
   sinceYesterday,
   viewFromQuery,
@@ -99,13 +98,6 @@ describe('a selection in the address', () => {
     expect(viewHolding(rows, 'acme/portal#2')).toBe('reviewing')
     expect(viewHolding(rows, 'acme/portal#1')).toBe('waiting')
     expect(viewHolding(rows, 'x/y#3')).toBeNull()
-  })
-
-  it('keeps the selection while it is drawn, else takes the asked-for row, else the first', () => {
-    expect(selectionOn([a, b], 'acme/portal#1', 'acme/portal#2')).toBe('acme/portal#1')
-    expect(selectionOn([a, b], null, 'acme/portal#2')).toBe('acme/portal#2')
-    expect(selectionOn([a, b], 'gone#9', 'gone#8')).toBe('acme/portal#1')
-    expect(selectionOn([], null, 'acme/portal#2')).toBeNull()
   })
 })
 
