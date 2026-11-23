@@ -1410,6 +1410,25 @@ const allKeys = computed<Record<ListView, Array<{ key: string }>>>(() => ({
   every: [],
 }))
 
+/**
+ * Every pull request the two reads name, before any filter: what the arrival watch asks
+ * before it lifts a repository filter, so it never lifts one for a pull request that is not
+ * there to show.
+ */
+function onTheDesk(data: Inbox): Set<string> {
+  return new Set([
+    ...data.briefs_to_confirm,
+    ...data.drafts_to_approve,
+    ...data.author_replies,
+    ...data.own_prs_without_reviewer,
+    ...data.in_progress,
+    ...data.awaiting_session,
+    ...data.posted_awaiting_author,
+  ].map(item => prKey(item)).concat(
+    (finished.data.value?.reviews ?? []).map(item => `${item.review.repo}#${item.review.pr}`),
+  ))
+}
+
 /** The pull request the address asks to have selected (`?pr=`, DEV-1373), or null. */
 const askedPr = computed(() => selectionFromQuery(route.query.pr))
 
@@ -1614,14 +1633,27 @@ watch(currentRows, (list) => {
  * filter on another repository is lifted. **The find field hid it** (F6): the first row was
  * selected in its place. So the field is cleared.
  *
- * An address naming a pull request no tab holds is left as it is, and the first row selected.
+ * An address naming a pull request no tab holds, once both reads have answered, is dropped,
+ * and the first row stays selected.
  */
 watch([askedPr, allKeys], ([asked, keys]) => {
   if (!asked) return
   const holding = viewHolding(keys, asked)
   if (!holding) {
+    /* Not until both reads have answered: a row nobody has read yet is not a row that is gone. */
+    const data = inbox.data.value
+    if (!data || !finished.loaded.value) return
     const askedRepo = asked.slice(0, asked.lastIndexOf('#'))
-    if (repo.value !== ALL_REPOSITORIES && repo.value !== askedRepo) repo.value = ALL_REPOSITORIES
+    if (repo.value !== ALL_REPOSITORIES && repo.value !== askedRepo && onTheDesk(data).has(asked)) {
+      repo.value = ALL_REPOSITORIES
+      return
+    }
+    /*
+     * **Nothing holds it, even unfiltered: drop it** (self-review round 3). A copied link to a
+     * pull request that has since left the desk otherwise kept this watch armed, and every
+     * repository the reader chose was reset to *All* under them.
+     */
+    void router.replace({ query: { ...route.query, pr: undefined } })
     return
   }
   if (!viewRows.value[holding].some(row => row.key === asked)) link.value = ''

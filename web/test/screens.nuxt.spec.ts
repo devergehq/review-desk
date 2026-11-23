@@ -3134,6 +3134,36 @@ describe('a pull request nobody has picked up', () => {
     }, { timeout: 5000 })
   })
 
+  it('drops an ask no tab holds, so the repository filter can still be chosen', async () => {
+    /*
+     * Self-review round 3: the ask was never dropped, so the watch that lifts a hiding filter
+     * reset every repository the reader chose back to *All*.
+     */
+    const page = await shown(Inbox, { route: '/?pr=acme%2Fportal%2399999' })
+    await vi.waitFor(async () => {
+      await settle(page)
+      expect(page.vm.$router.currentRoute.value.query.pr).toBeUndefined()
+    }, { timeout: 5000 })
+    await page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/billing-api'))!.trigger('click')
+    await settle(page)
+    await settle(page)
+    expect(page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/billing-api'))!
+      .attributes('aria-checked')).toBe('true')
+  })
+
+  it('keeps the repository filter for an ask that is not on the desk', async () => {
+    const page = await shown(Inbox)
+    await page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/billing-api'))!.trigger('click')
+    await settle(page)
+    await page.vm.$router.push('/?pr=acme%2Fportal%2399999')
+    await vi.waitFor(async () => {
+      await settle(page)
+      expect(page.vm.$router.currentRoute.value.query.pr).toBeUndefined()
+    }, { timeout: 5000 })
+    expect(page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/billing-api'))!
+      .attributes('aria-checked')).toBe('true')
+  })
+
   it('selects the first row when the address names a pull request no tab draws', async () => {
     const page = await shown(Inbox, { route: '/?pr=acme%2Fportal%2399999' })
     expect(page.find('[role="tab"][aria-selected="true"]').text()).toMatch(/^Waiting on you/)
