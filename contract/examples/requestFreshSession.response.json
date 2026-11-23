@@ -6,6 +6,7 @@
     "declined_at": null,
     "declined_reason": null
   },
+  "messages_checked_at": null,
   "reading": {
     "status": "gone",
     "allele_state": "done",

@@ -129,3 +129,27 @@ fn an_unknown_review_is_not_found_and_asks_allele_nothing() {
     assert_eq!(answer.error_code(), "not_found");
     assert_eq!(asked.load(Ordering::SeqCst), 0);
 }
+
+/// DEV-1381: when the review's session last checked for messages is the record's, served
+/// beside Allele's reading and whether or not there is an Allele to ask.
+#[test]
+fn the_last_check_for_messages_is_served_null_until_a_watcher_checks() {
+    let harness = start(review_desk_harvest::recorded::Recorded::nothing());
+    let seeded = seed(&harness.store);
+    let path = format!("/reviews/{}/session", seeded.review_id);
+
+    let before = harness.api("GET", &path, None).json();
+    assert!(before["messages_checked_at"].is_null(), "{before}");
+
+    harness
+        .store
+        .record_message_check(seeded.review_id)
+        .expect("a watcher's pass");
+    let after = harness.api("GET", &path, None).json();
+    let checked = after["messages_checked_at"].as_str().expect("a time");
+    assert!(checked.ends_with('Z'), "{checked}");
+    assert!(
+        after["reading"].is_null(),
+        "no Allele, so nothing was asked"
+    );
+}

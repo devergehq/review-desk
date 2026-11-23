@@ -2,6 +2,7 @@
   "review_id": 41,
   "session_id": "allele-ae03f8ce",
   "fresh_session": null,
+  "messages_checked_at": "2026-10-30T11:03:40Z",
   "reading": {
     "status": "awaiting_input",
     "allele_state": "awaiting_input",

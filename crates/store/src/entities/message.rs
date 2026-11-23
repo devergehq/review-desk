@@ -357,6 +357,36 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Record that the review's session checked for the developer's messages just now.
+    /// Migration 28, DEV-1381.
+    ///
+    /// `message list --unread --review` calls it on every watcher pass, so the page can
+    /// tell a watcher between passes from one that has stopped. **It is not activity**: it
+    /// does not mark the review active, or a watcher polling every twenty seconds would
+    /// keep every review it watches at the top of the desk.
+    pub fn record_message_check(&self, review_id: i64) -> Result<Timestamp> {
+        self.get_review(review_id)?;
+        let now = self.now();
+        self.conn.execute(
+            "INSERT INTO message_checks (review_id, checked_at) VALUES (?1, ?2)
+             ON CONFLICT (review_id) DO UPDATE SET checked_at = excluded.checked_at",
+            params![review_id, now],
+        )?;
+        Ok(now)
+    }
+
+    /// When the review's session last checked for messages, or `None` if nothing has.
+    pub fn messages_checked_at(&self, review_id: i64) -> Result<Option<Timestamp>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT checked_at FROM message_checks WHERE review_id = ?1",
+                params![review_id],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
     /// One message, by its number on the review, with what supersedes it.
     pub fn message(&self, review_id: i64, seq: i64) -> Result<ReviewMessage> {
         let found = self.message_row(review_id, seq)?;

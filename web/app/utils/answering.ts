@@ -122,7 +122,8 @@ export function answering(
  * **A gone or unreachable session still takes a question**, deliberately, because the
  * question is kept with the review either way. A gone one: the line under it says *Not
  * delivered · the session is gone* (`deliveryLine`), and the fresh session the strip offers is
- * what reads it. An unreachable one: the line says *Not read yet · Allele can't be reached*.
+ * what reads it. An unreachable one: the line says *Not read yet*, and when the session
+ * last checked for messages, which the record knows without Allele.
  * Refusing it would lose the developer's words to say what that line already says.
  */
 export function canAsk(mode: AnsweringMode): boolean {

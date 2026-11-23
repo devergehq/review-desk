@@ -6,6 +6,7 @@
     "declined_at": "2026-10-30T11:20:40Z",
     "declined_reason": "Allele says allele-ae03f8ce is running, so nothing was started over it"
   },
+  "messages_checked_at": null,
   "reading": {
     "status": "running",
     "allele_state": "running",
