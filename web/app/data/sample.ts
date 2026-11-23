@@ -1656,6 +1656,9 @@ function addMessage(
     created_at: nowIso(),
     read_at: null,
     read_by_session: null,
+    // DEV-1383: the sample has no Allele, so nothing is ever handed over.
+    handed_over_at: null,
+    handed_over_count: 0,
     // What the page sent, else the server's default: the tab the step now lives on.
     about: about ? { tab: about.tab, finding: about.finding ?? null } : { tab: TAB_OF_STEP[step], finding: null },
     parsed: false,

@@ -556,6 +556,25 @@ impl Records {
         self.with(|store| store.ask_session_about(review_id, step, about, body))
     }
 
+    /// Every question that may be handed to its session now — DEV-1383.
+    pub fn messages_to_hand_over(&self) -> Result<Vec<review_desk_store::Handover>, ApiError> {
+        self.with(|store| store.messages_to_hand_over())
+    }
+
+    /// One question, if it may be handed to its session now.
+    pub fn message_to_hand_over(
+        &self,
+        review_id: i64,
+        seq: i64,
+    ) -> Result<Option<review_desk_store::Handover>, ApiError> {
+        self.with(|store| store.message_to_hand_over(review_id, seq))
+    }
+
+    /// Record that Allele handed a question to the session.
+    pub fn record_handover(&self, review_id: i64, seq: i64) -> Result<ReviewMessage, ApiError> {
+        self.with(|store| store.record_handover(review_id, seq))
+    }
+
     /// The blocks the draft body is composed of, in order.
     pub fn draft_sections(&self, review_id: i64) -> Result<Vec<DraftSection>, ApiError> {
         self.with(|store| store.draft_sections(review_id))

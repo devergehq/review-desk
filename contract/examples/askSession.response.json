@@ -9,6 +9,8 @@
   "created_at": "2026-10-30T11:05:00Z",
   "read_at": null,
   "read_by_session": null,
+  "handed_over_at": null,
+  "handed_over_count": 0,
   "about": {
     "tab": "draft",
     "finding": null

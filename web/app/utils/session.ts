@@ -120,6 +120,10 @@ export function sessionAnswered(reading: SessionReading | null | undefined): boo
  * is gone, or blocked on a permission prompt and so not reading anything. Otherwise an
  * unread message is "not read yet", because the review's watcher reads the desk every
  * twenty seconds or so and a message a few seconds old has simply not been picked up.
+ *
+ * **Handed over, not read** (DEV-1383): with Allele present, the server asks Allele to put a
+ * notice in front of the session, and the line says when it last did and, after the first,
+ * how many times. A handover is not a reading, so the line still begins "Not read yet".
  */
 export function deliveryLine(
   message: ReviewMessage,
@@ -139,8 +143,18 @@ export function deliveryLine(
     case 'unreachable':
       return 'Not read yet · Allele can\'t be reached to say whether the session can'
     default:
-      return 'Not read yet'
+      return handedOverLine(message, now) ?? 'Not read yet'
   }
+}
+
+/** "Not read yet · handed to the session 20 sec ago", or `null` when it never has been. */
+function handedOverLine(message: ReviewMessage, now: Date): string | null {
+  const times = message.handed_over_count
+  if (times < 1 || message.handed_over_at == null) return null
+  const when = agoLabel(message.handed_over_at, now) ?? 'at an unrecorded time'
+  return times === 1
+    ? `Not read yet · handed to the session ${when}`
+    : `Not read yet · handed to the session ${times} times, most recently ${when}`
 }
 
 /**

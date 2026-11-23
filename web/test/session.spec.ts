@@ -80,6 +80,8 @@ describe('whether a message has reached the session', () => {
     created_at: '2026-10-30T11:00:00Z',
     read_at: null,
     read_by_session: null,
+    handed_over_at: null,
+    handed_over_count: 0,
     about: { tab: 'draft', finding: null },
     parsed: false,
     answer: null,
@@ -101,6 +103,37 @@ describe('whether a message has reached the session', () => {
     expect(deliveryLine(asked, reading('awaiting_input'), now)).toContain('Not delivered')
     expect(deliveryLine(asked, reading('running'), now)).toBe('Not read yet')
     expect(deliveryLine(asked, null, now)).toBe('Not read yet')
+  })
+
+  it('says when Allele handed it to the session, once', () => {
+    const once = { ...asked, handed_over_at: '2026-10-30T11:04:40Z', handed_over_count: 1 }
+    expect(deliveryLine(once, reading('running'), now))
+      .toBe('Not read yet · handed to the session 20 sec ago')
+    expect(deliveryLine(once, null, now))
+      .toBe('Not read yet · handed to the session 20 sec ago')
+  })
+
+  it('says how many times, and when most recently, after the first', () => {
+    const thrice = { ...asked, handed_over_at: '2026-10-30T11:01:00Z', handed_over_count: 3 }
+    expect(deliveryLine(thrice, reading('finished'), now))
+      .toBe('Not read yet · handed to the session 3 times, most recently 4 min ago')
+  })
+
+  it('keeps gone and waiting on a permission prompt over a handover', () => {
+    const once = { ...asked, handed_over_at: '2026-10-30T11:04:40Z', handed_over_count: 1 }
+    expect(deliveryLine(once, reading('gone'), now)).toContain('the session is gone')
+    expect(deliveryLine(once, reading('awaiting_input'), now)).toContain('permission prompt')
+  })
+
+  it('says read, not handed over, once the session has marked it read', () => {
+    const read = {
+      ...asked,
+      handed_over_at: '2026-10-30T11:01:00Z',
+      handed_over_count: 1,
+      read_at: '2026-10-30T11:04:00Z',
+      read_by_session: 'allele-1',
+    }
+    expect(deliveryLine(read, null, now)).toBe('Read by allele-1 1 min ago')
   })
 
   it('says nothing about a reply, which is read by being on the page', () => {

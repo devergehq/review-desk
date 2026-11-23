@@ -48,6 +48,7 @@ pub use crate::entities::brief_structure::{
 pub use crate::entities::composition::finding_heading;
 pub use crate::entities::decision::{TicketedAndApproved, DEVELOPER_DECISIONS};
 pub use crate::entities::house_style::thread_marker;
+pub use crate::entities::message::{Handover, HANDOVER_AGAIN_AFTER_SECS, HANDOVER_AT_MOST};
 pub use crate::entities::posted::{PendingPost, PostRequest};
 pub use crate::entities::provenance::{
     AcceptanceCriterion, CriterionStatus, DescriptionLintResult, DescriptionLintStatus, FileChange,

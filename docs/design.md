@@ -194,9 +194,11 @@ first column. Seven rules it keeps, each in the file that holds it:
 **The conversation follows the answer contract** (`docs/answer-contract.md`): a headline, at most
 five points each with its basis, cites, and at most three suggestions, each accepted or dismissed
 by the developer. **Who answers is the developer's choice, and Review Desk never starts, resumes
-or drives Claude on its own** (S11): with Allele the conversation is two way; with the
-developer's own session it is one way, and the developer asks there; with neither it is read
-only. Under 700px wide the conversation is a bottom sheet (S14).
+or drives Claude on its own** (S11): with Allele the conversation is two way, and a question
+is handed to the session through Allele the moment it is asked; with the developer's own
+session it is one way, and the developer asks there; with neither it is read only. The line
+under an unread question says when it was handed over: *Not read yet · handed to the session
+20 sec ago*, or *… 3 times, most recently 4 min ago*. Under 700px wide the conversation is a bottom sheet (S14).
 
 ## Ask this review is the conversation, drawn as the contract shapes it
 
@@ -572,3 +574,4 @@ Neither of these is a decision against; both are waiting on real use.
 | 23 Nov 2026 | Desktop is the target: the shell fills the window, every page has the whole main column, and prose stops at its measure | *Two kinds of screen*; `default.vue`, `shell.spec.ts` |
 | 23 Nov 2026 | The side columns' widths are defaults: each has a drag handle, the width is kept per browser, and the main column keeps 480px | *The application shell*; `utils/columns.ts`, `ColumnHandle.vue` |
 | 15 Nov 2026 | Review Desk never starts, resumes or drives Claude itself; without Allele the conversation is one way | *The application shell*; S11 |
+| 23 Nov 2026 | With Allele, an asked question is handed to the session through Allele, and its line says when | *The application shell*; S11; `deliveryLine` |

@@ -186,14 +186,34 @@ fn start_on_a_fresh_database(
     proxied: Option<Hostname>,
     allele: Allele,
 ) -> Harness {
-    start_signed_in_or_not(github, proxied, allele, false).0
+    start_signed_in_or_not(github, proxied, allele, false, |server| server).0
+}
+
+/// Start a server that hands questions over through the Allele at `socket`, sweeping every
+/// `every` and saying what it says to `say` — DEV-1383.
+#[allow(dead_code)]
+pub fn start_handing_over(
+    socket: &std::path::Path,
+    every: std::time::Duration,
+    say: review_desk_server::Say,
+) -> Harness {
+    start_signed_in_or_not(
+        Recorded::nothing(),
+        None,
+        Allele::at(socket),
+        false,
+        move |server| server.sweeping_every(every).saying_to(say),
+    )
+    .0
 }
 
 /// A server that has not been signed in to, and the token that would sign in to it.
 ///
 /// For the tests of signing in itself: every other harness spends its token at start.
 pub fn start_holding_its_token() -> (Harness, String) {
-    start_signed_in_or_not(Recorded::nothing(), None, Allele::none(), true)
+    start_signed_in_or_not(Recorded::nothing(), None, Allele::none(), true, |server| {
+        server
+    })
 }
 
 fn start_signed_in_or_not(
@@ -201,6 +221,7 @@ fn start_signed_in_or_not(
     proxied: Option<Hostname>,
     allele: Allele,
     keep_the_token: bool,
+    configure: impl FnOnce(Server) -> Server,
 ) -> (Harness, String) {
     let directory = tempfile::tempdir().expect("a temporary directory");
     let path = directory.path().join("review-desk.db");
@@ -215,6 +236,7 @@ fn start_signed_in_or_not(
         .expect("binding a free port on 127.0.0.1")
         .also_answering_to(proxied)
         .reading_sessions_from(allele);
+    let server = configure(server);
 
     let token = server
         .sign_in_token()

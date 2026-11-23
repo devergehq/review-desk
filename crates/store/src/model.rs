@@ -3091,6 +3091,12 @@ pub struct ReviewMessage {
     pub read_at: Option<Timestamp>,
     /// The session that read it, as the deliverer named it.
     pub read_by_session: Option<String>,
+    /// When Allele last said it had handed this question to the review's session, or
+    /// `None` while it never has. Only an `ask` is ever handed over. Migration 28, DEV-1383.
+    pub handed_over_at: Option<Timestamp>,
+    /// How many times Allele has handed it over. At most [`crate::HANDOVER_AT_MOST`].
+    /// Migration 28.
+    pub handed_over_count: i64,
     /// Where it sits on the page: a tab, and a finding when it is about one. Migration 26.
     pub about: crate::answer::About,
     /// The reply as the answer contract parsed it, or `None` for a reply written as prose,

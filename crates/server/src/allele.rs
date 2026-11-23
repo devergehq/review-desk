@@ -15,10 +15,15 @@
 //! - **Broken is loud and blocks nothing.** A socket that refuses, or accepts and does not
 //!   answer within [`TIMEOUT`], reads as [`SessionStatus::Unreachable`]. The request that
 //!   asked costs at most that long, and nothing else on the page waits on it.
-//! - **One direction.** The requests are `sessions_status` and, for `review-desk post`
-//!   (DEV-1347), `prompts_verify`, and nothing else. The session's `reply_to` address is
-//!   read off the answer and dropped: Review Desk reads from a session and never writes
-//!   into one.
+//! - **It reads, and it asks Allele to hand over one notice.** The requests are
+//!   `sessions_status`, `prompts_verify` for `review-desk post` (DEV-1347), and
+//!   `sessions_prompt` (DEV-1383), and nothing else. The session's `reply_to` address is
+//!   read off the answer and dropped. Reversed on 23 November 2026 from "never writes into
+//!   a session": with Allele present, Review Desk asks Allele to put a notice in front of
+//!   the review's session when the developer asks a question, and Allele owns the delivery
+//!   — Review Desk never speaks Claude Code's own protocol, and never starts, resumes or
+//!   drives Claude. What it sends is a notice that points at the record, never the
+//!   developer's words: see [`crate::handover`].
 //!
 //! The wire is Allele's (`src/dispatch/protocol.rs` there): one JSON object per line each
 //! way, over a Unix socket at `~/.allele/control.sock`, mode 0600. Allele keeps those wire
@@ -34,6 +39,16 @@ use std::time::Duration;
 /// slower than this is not an answer worth waiting for; it is a stuck Allele, and saying
 /// so is the useful thing to show.
 pub const TIMEOUT: Duration = Duration::from_secs(1);
+
+/// How long a handover may take, from connecting to Allele's answer — DEV-1383.
+///
+/// Fifteen seconds, not [`TIMEOUT`]'s one: Allele answers `sessions_prompt` only once it has
+/// seen the session start on the notice, which takes as long as Claude takes to begin. It is
+/// spent on the handover thread alone, never on a request someone is waiting for.
+pub const PROMPT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// The `allele.ext/1` contract a handover asks for.
+const CONTRACT: &str = "allele.ext/1";
 
 /// The start of the message Allele sends for an id it has no record of.
 ///
@@ -176,36 +191,68 @@ fn ask(socket: &Path, session_id: &str) -> Reading {
 }
 
 /// Send one request line and read one answer line, or say what went wrong reaching Allele.
-#[cfg(unix)]
 fn exchange(socket: &Path, request: &serde_json::Value) -> Result<String, String> {
-    use std::io::{BufRead, BufReader, Write};
-    use std::os::unix::net::UnixStream;
+    let mut connection = Connection::open(socket, TIMEOUT)?;
+    connection.ask(request)
+}
 
-    let mut stream = UnixStream::connect(socket)
-        .map_err(|error| format!("Allele's socket refused the connection: {error}"))?;
+/// One connection to Allele's socket, on which each request line is answered by one line.
+#[cfg(unix)]
+struct Connection {
+    reader: std::io::BufReader<std::os::unix::net::UnixStream>,
+    timeout: Duration,
+}
 
-    // Both directions, so a socket that accepts and never reads cannot hold a write either.
-    stream
-        .set_read_timeout(Some(TIMEOUT))
-        .and_then(|()| stream.set_write_timeout(Some(TIMEOUT)))
-        .map_err(|error| error.to_string())?;
+#[cfg(unix)]
+impl Connection {
+    fn open(socket: &Path, timeout: Duration) -> Result<Self, String> {
+        use std::os::unix::net::UnixStream;
 
-    writeln!(stream, "{request}").map_err(|error| format!("could not ask Allele: {error}"))?;
+        let stream = UnixStream::connect(socket)
+            .map_err(|error| format!("Allele's socket refused the connection: {error}"))?;
 
-    let mut line = String::new();
-    match BufReader::new(stream).read_line(&mut line) {
-        Ok(0) => Err("Allele closed the connection without answering".to_string()),
-        Ok(_) => Ok(line),
-        Err(error) => Err(format!(
-            "Allele did not answer within {} s: {error}",
-            TIMEOUT.as_secs()
-        )),
+        // Both directions, so a socket that accepts and never reads cannot hold a write either.
+        stream
+            .set_read_timeout(Some(timeout))
+            .and_then(|()| stream.set_write_timeout(Some(timeout)))
+            .map_err(|error| error.to_string())?;
+
+        Ok(Connection {
+            reader: std::io::BufReader::new(stream),
+            timeout,
+        })
+    }
+
+    fn ask(&mut self, request: &serde_json::Value) -> Result<String, String> {
+        use std::io::{BufRead, Write};
+
+        writeln!(self.reader.get_mut(), "{request}")
+            .map_err(|error| format!("could not ask Allele: {error}"))?;
+
+        let mut line = String::new();
+        match self.reader.read_line(&mut line) {
+            Ok(0) => Err("Allele closed the connection without answering".to_string()),
+            Ok(_) => Ok(line),
+            Err(error) => Err(format!(
+                "Allele did not answer within {} s: {error}",
+                self.timeout.as_secs()
+            )),
+        }
     }
 }
 
 #[cfg(not(unix))]
-fn exchange(_socket: &Path, _request: &serde_json::Value) -> Result<String, String> {
-    Err("Allele's socket is a Unix socket, which this platform cannot open".to_string())
+struct Connection;
+
+#[cfg(not(unix))]
+impl Connection {
+    fn open(_socket: &Path, _timeout: Duration) -> Result<Self, String> {
+        Err("Allele's socket is a Unix socket, which this platform cannot open".to_string())
+    }
+
+    fn ask(&mut self, _request: &serde_json::Value) -> Result<String, String> {
+        unreachable!("no connection is ever opened on this platform")
+    }
 }
 
 /// Refuse a verifier that is not Allele's own kind of socket: a Unix socket only its owner
@@ -331,6 +378,136 @@ impl Allele {
     }
 }
 
+/// What Allele said when asked to hand a notice to a session — DEV-1383.
+///
+/// The refusals are DEV-1382's codes, folded to what Review Desk does about each: try again
+/// on the next sweep, hold off until the session's state changes, or note an Allele too old
+/// to be asked. **Only [`Handed::Prompted`] is recorded.**
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Handed {
+    /// Allele put the notice in front of the session and saw it start.
+    Prompted,
+    /// `session_busy`: the session is working. The next sweep tries again.
+    Busy,
+    /// `session_awaiting_person`: a permission prompt or a menu is open, and only a person
+    /// can answer it. Held until the session's state changes.
+    AwaitingPerson,
+    /// `session_not_live`, `not_dispatched` or `session_not_found`, by its code. Nothing
+    /// Allele can deliver to; the watcher is the fallback. Held until the state changes.
+    NotLive(String),
+    /// An Allele that has no `sessions_prompt` to give: one from before `allele.ext/1`, one
+    /// that does not know the `prompt` capability, or one that did not grant it.
+    OlderAllele(String),
+    /// The socket is there and did not answer, or closed before it did.
+    Unreachable(String),
+    /// Anything else Allele said, as it said it — `prompt_delivery_unconfirmed`, say.
+    /// Nothing is recorded and the next sweep tries again.
+    Refused(String),
+}
+
+impl Allele {
+    /// Ask Allele to hand `notice` to `session_id`, or `None` when there is no Allele here.
+    ///
+    /// **Blocks for up to [`PROMPT_TIMEOUT`]**, so it is for the handover thread and nothing
+    /// else. One connection: an `allele.ext/1` `hello` asking for `observe` and `prompt`,
+    /// then the `sessions_prompt` itself.
+    pub fn prompt(&self, session_id: &str, notice: &str) -> Option<Handed> {
+        let socket = self.socket.as_deref().filter(|socket| socket.exists())?;
+        Some(hand_over(socket, session_id, notice))
+    }
+}
+
+fn hand_over(socket: &Path, session_id: &str, notice: &str) -> Handed {
+    let mut connection = match Connection::open(socket, PROMPT_TIMEOUT) {
+        Ok(connection) => connection,
+        Err(detail) => return Handed::Unreachable(detail),
+    };
+
+    let hello = serde_json::json!({
+        "op": "hello",
+        "contract": CONTRACT,
+        "client": { "id": "review-desk", "version": env!("CARGO_PKG_VERSION") },
+        "capabilities": ["observe", "prompt"],
+    });
+    let greeted = match connection.ask(&hello).map(|line| parsed(&line)) {
+        Ok(Some(value)) => value,
+        Ok(None) => return Handed::Refused("Allele's answer to hello was not JSON".to_string()),
+        Err(detail) => return Handed::Unreachable(detail),
+    };
+    match greeted["result"].as_str() {
+        Some("hello") => {}
+        // A pre-`ext/1` Allele answers `hello` with `bad_request`, and one that knows `ext/1`
+        // but not the `prompt` capability cannot parse a hello asking for it.
+        Some("error")
+            if matches!(
+                greeted["code"].as_str(),
+                Some("bad_request" | "unsupported_contract")
+            ) =>
+        {
+            return Handed::OlderAllele(said(&greeted))
+        }
+        Some("error") => return Handed::Refused(said(&greeted)),
+        _ => return Handed::Refused("Allele's answer to hello was not a hello".to_string()),
+    }
+    let granted = greeted["granted"]
+        .as_array()
+        .is_some_and(|granted| granted.iter().any(|one| one == "prompt"));
+    if !granted {
+        return Handed::OlderAllele("Allele did not grant the prompt capability".to_string());
+    }
+
+    let request = serde_json::json!({
+        "op": "sessions_prompt",
+        "session_id": session_id,
+        "prompt": notice,
+    });
+    let answered = match connection.ask(&request).map(|line| parsed(&line)) {
+        Ok(Some(value)) => value,
+        Ok(None) => return Handed::Refused("Allele's answer was not JSON".to_string()),
+        Err(detail) => return Handed::Unreachable(detail),
+    };
+    match answered["result"].as_str() {
+        Some("prompted") => Handed::Prompted,
+        Some("error") => refusal(&answered),
+        _ => Handed::Refused("Allele's answer was not prompted or an error".to_string()),
+    }
+}
+
+fn parsed(line: &str) -> Option<serde_json::Value> {
+    serde_json::from_str(line.trim()).ok()
+}
+
+/// An error answer, as `code: message`.
+fn said(value: &serde_json::Value) -> String {
+    format!(
+        "{}: {}",
+        value["code"].as_str().unwrap_or_default(),
+        value["message"].as_str().unwrap_or_default()
+    )
+}
+
+/// One of DEV-1382's refusals, as what Review Desk does about it.
+fn refusal(value: &serde_json::Value) -> Handed {
+    let code = value["code"].as_str().unwrap_or_default();
+    let message = value["message"].as_str().unwrap_or_default();
+    match code {
+        "session_busy" => Handed::Busy,
+        "session_awaiting_person" => Handed::AwaitingPerson,
+        "session_not_live" | "not_dispatched" | "session_not_found" => {
+            Handed::NotLive(code.to_string())
+        }
+        // Today's Allele names an unknown id with `bad_request`; see `NOT_FOUND_MESSAGE`.
+        "bad_request" if message.starts_with(NOT_FOUND_MESSAGE) => {
+            Handed::NotLive("session_not_found".to_string())
+        }
+        // An `ext/1` Allele that granted `prompt` but has no such op parses the request and
+        // refuses it whole.
+        "capability_not_granted" => Handed::OlderAllele(said(value)),
+        "bad_request" if message.contains("sessions_prompt") => Handed::OlderAllele(said(value)),
+        _ => Handed::Refused(said(value)),
+    }
+}
+
 /// Read one line of Allele's answer.
 fn answer(line: &str) -> Reading {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
@@ -422,6 +599,164 @@ mod tests {
             }
         });
         (dir, path)
+    }
+
+    /// A socket that answers each line of one connection with the next of `replies`, and
+    /// hands back every line it was sent.
+    fn allele_conversing(
+        replies: &'static [&'static str],
+    ) -> (
+        tempfile::TempDir,
+        PathBuf,
+        std::sync::mpsc::Receiver<Vec<String>>,
+    ) {
+        let dir = tempfile::Builder::new()
+            .prefix("rd")
+            .tempdir_in("/tmp")
+            .expect("a temporary directory");
+        let path = dir.path().join("a.sock");
+        let listener = UnixListener::bind(&path).expect("binding a socket");
+        let (sent, heard) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            if let Ok((stream, _)) = listener.accept() {
+                let mut reader = BufReader::new(stream.try_clone().expect("cloning"));
+                let mut stream = stream;
+                let mut lines = Vec::new();
+                for reply in replies {
+                    let mut asked = String::new();
+                    if reader.read_line(&mut asked).unwrap_or(0) == 0 {
+                        break;
+                    }
+                    lines.push(asked.trim().to_string());
+                    let _ = writeln!(stream, "{reply}");
+                }
+                let _ = sent.send(lines);
+            }
+        });
+        (dir, path, heard)
+    }
+
+    const HELLO: &str = r#"{"result":"hello","contract_versions":["allele.ext/1"],"epoch":"e1","granted":["observe","prompt"],"dispatch_limits":null}"#;
+
+    #[test]
+    fn a_prompt_says_hello_asking_for_prompt_then_sends_the_notice() {
+        let (_dir, path, heard) = allele_conversing(&[
+            HELLO,
+            r#"{"result":"prompted","session":{"session_id":"9f2c","name":"Review","was_state":"response_ready","now_state":"running"}}"#,
+        ]);
+        let handed = Allele::at(&path).prompt("9f2c", "Review Desk: a notice");
+        assert_eq!(handed, Some(Handed::Prompted));
+
+        let lines = heard.recv().expect("what Allele was sent");
+        let hello: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+        assert_eq!(hello["op"], "hello");
+        assert_eq!(hello["contract"], "allele.ext/1");
+        assert_eq!(hello["client"]["id"], "review-desk");
+        assert_eq!(
+            hello["capabilities"],
+            serde_json::json!(["observe", "prompt"])
+        );
+        let prompt: serde_json::Value = serde_json::from_str(&lines[1]).unwrap();
+        assert_eq!(
+            prompt,
+            serde_json::json!({
+                "op": "sessions_prompt",
+                "session_id": "9f2c",
+                "prompt": "Review Desk: a notice",
+            })
+        );
+    }
+
+    #[test]
+    fn each_refusal_reads_as_what_review_desk_does_about_it() {
+        let cases = [
+            (
+                r#"{"result":"error","code":"session_busy","message":"running"}"#,
+                Handed::Busy,
+            ),
+            (
+                r#"{"result":"error","code":"session_awaiting_person","message":"menu"}"#,
+                Handed::AwaitingPerson,
+            ),
+            (
+                r#"{"result":"error","code":"session_not_live","message":"done"}"#,
+                Handed::NotLive("session_not_live".to_string()),
+            ),
+            (
+                r#"{"result":"error","code":"not_dispatched","message":"a person's"}"#,
+                Handed::NotLive("not_dispatched".to_string()),
+            ),
+            (
+                r#"{"result":"error","code":"session_not_found","message":"no session with id x"}"#,
+                Handed::NotLive("session_not_found".to_string()),
+            ),
+            (
+                r#"{"result":"error","code":"bad_request","message":"no session with id x"}"#,
+                Handed::NotLive("session_not_found".to_string()),
+            ),
+            (
+                r#"{"result":"error","code":"capability_not_granted","message":"prompt"}"#,
+                Handed::OlderAllele("capability_not_granted: prompt".to_string()),
+            ),
+            (
+                r#"{"result":"error","code":"prompt_delivery_unconfirmed","message":"never started"}"#,
+                Handed::Refused("prompt_delivery_unconfirmed: never started".to_string()),
+            ),
+        ];
+        for (reply, expected) in cases {
+            let replies: &'static [&'static str] = Box::leak(Box::new([HELLO, reply]));
+            let (_dir, path, _heard) = allele_conversing(replies);
+            assert_eq!(
+                Allele::at(&path).prompt("s1", "n"),
+                Some(expected),
+                "{reply}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_allele_that_refuses_the_hello_is_older_and_is_sent_no_prompt() {
+        for refusal in [
+            // Before `ext/1`, `hello` is an op nobody knows.
+            r#"{"result":"error","code":"bad_request","message":"could not parse request: unknown variant `hello`"}"#,
+            // An `ext/1` Allele that does not know `prompt` cannot parse a hello asking for it.
+            r#"{"result":"error","code":"bad_request","message":"could not parse hello: unknown variant `prompt`"}"#,
+        ] {
+            let replies: &'static [&'static str] = Box::leak(Box::new([refusal]));
+            let (_dir, path, heard) = allele_conversing(replies);
+            assert!(matches!(
+                Allele::at(&path).prompt("s1", "n"),
+                Some(Handed::OlderAllele(_))
+            ));
+            assert_eq!(heard.recv().unwrap().len(), 1, "nothing after the hello");
+        }
+    }
+
+    #[test]
+    fn an_allele_that_does_not_grant_prompt_is_older_and_is_sent_no_prompt() {
+        let (_dir, path, heard) = allele_conversing(&[
+            r#"{"result":"hello","contract_versions":["allele.ext/1"],"epoch":"e1","granted":["observe"],"dispatch_limits":null}"#,
+        ]);
+        assert!(matches!(
+            Allele::at(&path).prompt("s1", "n"),
+            Some(Handed::OlderAllele(_))
+        ));
+        assert_eq!(heard.recv().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn no_socket_file_is_no_prompt_attempted() {
+        assert_eq!(
+            Allele::at("/tmp/review-desk-no-such-allele.sock").prompt("s1", "n"),
+            None
+        );
+        assert_eq!(Allele::none().prompt("s1", "n"), None);
+    }
+
+    #[test]
+    fn a_prompt_waits_longer_than_a_status_read() {
+        assert_eq!(PROMPT_TIMEOUT, Duration::from_secs(15));
+        assert_eq!(TIMEOUT, Duration::from_secs(1));
     }
 
     #[test]

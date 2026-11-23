@@ -789,8 +789,25 @@ recording what the author did with it is the harvest's whole job.
 
 **The developer asks from the dashboard; the session reads, marks read and replies from
 here.** Decided on 30 October 2026 in DEV-1140 (option A) and built in DEV-1141: the
-conversation is kept in the record and delivered by Locus, so Review Desk still writes into
-no session and depends on nothing.
+conversation is kept in the record and delivered by Locus. **Changed on 23 November 2026
+(DEV-1383): with Allele present, Review Desk hands a question to the review's session
+through Allele** the moment it is asked, and Locus is the fallback; without Allele nothing
+changes, and Review Desk still depends on nothing.
+
+**What is handed over is a notice, never the question.** It names the review, the message's
+number and its tab, and the three commands below; the session reads the question itself
+with `message list`, so the record stays the one source of truth and `message read` still
+marks delivery. The server sends it off the request, so asking never waits on Allele, and
+again on a sweep every 15 seconds for an `ask` that is still unread: never more than three
+times, and no sooner than two minutes after the last. A send-back is never handed over.
+
+| Allele answers | Review Desk |
+| -- | -- |
+| `prompted` | records `handed_over_at` and adds one to `handed_over_count` |
+| `session_busy` | records nothing, and tries again on the next sweep |
+| `session_awaiting_person`, `session_not_live`, `not_dispatched`, `session_not_found` | records nothing, and does not try that session again until Allele reports a different state for it |
+| an Allele without `sessions_prompt` | records nothing, and says so once on `serve`'s standard error |
+| no socket, or no answer within 15 s | nothing |
 
 ```sh
 review-desk message list --unread                       # every review's undelivered messages
@@ -866,13 +883,14 @@ A Locus that does not know about messages leaves them unread, and that is all th
 
 #### Who is answering: two way, one way, or nobody
 
-**Review Desk never starts, resumes or drives Claude.** DEV-1335, to S11 and S13. The column
-says who answers, read off Allele's socket and the record, never off a setting, a process or
+**Review Desk never starts, resumes or drives Claude.** DEV-1335, to S11 and S13. With
+Allele, it asks Allele to hand a question to the review's session (DEV-1383, above), and
+Allele owns that delivery. The column says who answers, read off Allele's socket and the record, never off a setting, a process or
 anything of the developer's Claude:
 
 | Mode | When | The column |
 | -- | -- | -- |
-| Two way | Allele has a reading of the review's session | *Ask this review*: asked here, kept, delivered by Locus |
+| Two way | Allele has a reading of the review's session | *Ask this review*: asked here, kept, handed to the session through Allele, with Locus as the fallback |
 | One way | no reading, and a session has replied with `message reply` | *From your session*: what it wrote, *Written so far*, and **Copy a reference** in place of a send |
 | None | neither | read only; what is kept still reads |
 
@@ -1611,8 +1629,9 @@ Every review page draws it and asks again every five seconds while it is visible
 **When Allele has answered, this panel stops guessing**: the forty-second sentence says
 how long the wait has been and points at the strip, instead of "the session may not be
 running". **With no Allele, nothing changes**: there is no strip and the sentence is the
-one above. The server only ever asks; it never writes to a session, never answers a prompt
-and never serves the session's own address. `session_alive` on the queue is still null —
+one above. The strip only ever asks; it never answers a prompt and never serves the
+session's own address. The one thing the server sends a session is DEV-1383's notice, through
+Allele, when the developer asks a question (*Talking to the review's session*). `session_alive` on the queue is still null —
 the queue is a separate screen and was left out of this change.
 
 `crates/server/src/allele.rs` holds the one brittle thing: Allele answers an id it has no

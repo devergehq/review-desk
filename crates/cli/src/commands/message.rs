@@ -161,6 +161,9 @@ pub(crate) fn document(message: &ReviewMessage) -> Value {
         "created_at": message.created_at,
         "read_at": message.read_at,
         "read_by_session": message.read_by_session,
+        // DEV-1383: when Allele last handed the question to the session, and how often.
+        "handed_over_at": message.handed_over_at,
+        "handed_over_count": message.handed_over_count,
         "about": message.about,
         // The reply as the answer contract parsed it, or null: `body` is the raw text.
         "parsed": message.parsed(),

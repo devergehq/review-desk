@@ -27,6 +27,7 @@ use crate::allele::{Allele, SessionStatus};
 use crate::developer::{self, Developer};
 use crate::error::{ApiError, Code};
 use crate::github::Github;
+use crate::handover::Nudger;
 use crate::route::{match_route, Operation, Target};
 use crate::store::{now, Records};
 use crate::{assets, wire};
@@ -50,6 +51,9 @@ pub struct Api {
     github: Github,
     allele: Allele,
     developer: Developer,
+    /// Tells the handover thread a question has just been asked (DEV-1383). Empty while
+    /// none is running.
+    handover: Nudger,
 }
 
 /// One answer: a status, a document, and the cookie to set when the answer is a sign-in.
@@ -74,12 +78,29 @@ impl Api {
             github,
             allele: Allele::none(),
             developer,
+            handover: Nudger::default(),
         }
     }
 
     /// Read what each review's session is doing from this Allele.
     pub fn reading_sessions_from(mut self, allele: Allele) -> Self {
         self.allele = allele;
+        self
+    }
+
+    /// The Allele this asks, for the handover thread to ask too.
+    pub fn allele(&self) -> &Allele {
+        &self.allele
+    }
+
+    /// The store this answers from, for the handover thread to read too.
+    pub fn records(&self) -> &Records {
+        &self.records
+    }
+
+    /// Nudge this handover thread when the developer asks a question.
+    pub fn handing_over_through(mut self, handover: Nudger) -> Self {
+        self.handover = handover;
         self
     }
 
@@ -1400,9 +1421,10 @@ impl Api {
     /// `POST /reviews/{reviewId}/messages`: the developer asks the review's session.
     ///
     /// **The developer's act and nothing else's**: the only author this can write is the
-    /// developer, and no message can sign anything off. Delivering it is Locus's — the
-    /// review worker's watcher reads it with `review-desk message list --unread` — so this
-    /// stores it and stops.
+    /// developer, and no message can sign anything off. It stores the message, nudges the
+    /// handover thread, and answers: with Allele present the question is handed to the
+    /// session from that thread (DEV-1383), and the 201 never waits on Allele. Without it,
+    /// the review worker's watcher reads it with `review-desk message list --unread`.
     fn ask_session(&self, review_id: i64, body: &[u8]) -> Result<(u16, Value), ApiError> {
         let request: AskSessionRequest = read_body(body)?;
         let step: ReviewLayerName = request.step.parse().map_err(ApiError::from)?;
@@ -1423,6 +1445,7 @@ impl Api {
             })
             .transpose()?;
         let message = self.records.ask_session(review_id, step, about, &words)?;
+        self.handover.asked(message.review_id, message.seq);
         Ok((201, wire::message(&message)))
     }
 
