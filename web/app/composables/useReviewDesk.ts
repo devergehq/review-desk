@@ -8,6 +8,7 @@
  *   inbox()          GET /inbox
  *   reviews(repo)    GET /reviews?repo=
  *   review(id)       GET /reviews/{id}
+ *   heldReview(id)   GET /reviews/{id}, held by id for the list's preview, with readAhead
  *   draft(id)        GET /reviews/{id}/draft
  *   rules(repo)      GET /rules?repo=
  *   repos()          GET /repos
@@ -41,6 +42,7 @@ import {
   isRef,
   onScopeDispose,
   ref,
+  shallowReactive,
   shallowRef,
   watch,
   type ComputedRef,
@@ -451,6 +453,45 @@ export function useReviewDesk() {
     return following(id, (from, value) => from.getReview(value))
   }
 
+  /**
+   * `GET /reviews/{id}`, **held** — the list's preview, which moves from review to review as
+   * fast as the pointer does (DEV-1374).
+   *
+   * Unlike `review`, it reads nothing by itself: the preview asks with `refresh` once the
+   * pointer rests, so a sweep down the list is not a read per row. What it draws meanwhile is
+   * what is held for the review now asked for — and `null`, never the last review's answer,
+   * when nothing is. A write refreshes it like any other read on screen.
+   */
+  function heldReview(id: Ref<number | null> | ComputedRef<number | null>): HeldReview {
+    const refresh = async () => {
+      if (id.value != null) await readHeld(id.value, { fresh: true })
+    }
+    live.add(refresh)
+    onScopeDispose(() => {
+      live.delete(refresh)
+    })
+    return {
+      data: computed(() => (id.value == null ? null : heldReviews.get(id.value) ?? null)),
+      error: computed(() => {
+        if (id.value == null || heldReviews.has(id.value)) return null
+        return heldFailures.get(id.value) ?? null
+      }),
+      refresh,
+    }
+  }
+
+  /**
+   * Read these reviews ahead, three at a time, skipping any already held or in flight.
+   *
+   * It replaces whatever was queued: the list asks again whenever its rows or its selection
+   * change, and the rows of a tab left behind are not worth reading any more. An empty list
+   * stops it.
+   */
+  function readAhead(ids: number[]): void {
+    aheadQueue = ids.filter(id => !heldReviews.has(id))
+    pumpAhead()
+  }
+
   /** `GET /reviews/{id}/draft` — the draft body, its checks, the edits and the nits. */
   function draft(id: number | Ref<number> | ComputedRef<number>): DeskResource<DraftDetail> {
     return following(id, (from, value) => from.getDraft(value))
@@ -606,6 +647,8 @@ export function useReviewDesk() {
      * the button still offered, until the developer reloads.
      */
     if (!result.ok) await refreshEverything()
+    /* Gone from the record, so gone from what the list's preview holds. */
+    else heldReviews.delete(id)
     return result
   }
 
@@ -887,6 +930,8 @@ export function useReviewDesk() {
     reviews,
     finishedReviews,
     review,
+    heldReview,
+    readAhead,
     draft,
     session,
     messages,
@@ -960,6 +1005,88 @@ function following<V, T>(
   return made
 }
 
+/* ------------------------------ Held reviews ------------------------------ */
+
+/*
+ * **Reviews the list's preview has read, kept by id for as long as the page is** — DEV-1374.
+ *
+ * The preview used to be remounted for every row and read `GET /reviews/{id}` from scratch,
+ * so coming back to a row drew *Reading the review…* again for an answer the page already had.
+ * A review read once is now drawn at once from here, and read again quietly behind it once the
+ * pointer rests. One answer per review on the desk is the most this holds.
+ *
+ * **Each read is numbered per review**, for `resource`'s reason: an older read answering after
+ * a newer one would put the review back as it was before a write.
+ */
+const heldReviews = shallowReactive(new Map<number, ReviewDetail>())
+const heldFailures = shallowReactive(new Map<number, DeskError>())
+const heldReading = new Map<number, { generation: number, done: Promise<void> }>()
+let heldGeneration = 0
+
+/** Read one review into the held answers, or join the read already in flight. */
+function readHeld(id: number, { fresh = false }: { fresh?: boolean } = {}): Promise<void> {
+  const inFlight = heldReading.get(id)
+  if (inFlight && !fresh) return inFlight.done
+  const generation = ++heldGeneration
+  const done = (async () => {
+    try {
+      const answer = await (await records()).getReview(id)
+      if (heldReading.get(id)?.generation !== generation) return
+      heldReviews.set(id, answer)
+      heldFailures.delete(id)
+    }
+    catch (thrown) {
+      if (heldReading.get(id)?.generation !== generation) return
+      heldFailures.set(id, asDeskError(thrown))
+    }
+    finally {
+      if (heldReading.get(id)?.generation === generation) heldReading.delete(id)
+    }
+  })()
+  heldReading.set(id, { generation, done })
+  return done
+}
+
+/** The reviews waiting to be read ahead, nearest the selection first. */
+let aheadQueue: number[] = []
+let aheadRunning = 0
+
+/**
+ * **At most three reads ahead at once**, so a tab of fifty rows is read in the background
+ * without fifty requests landing on the server in one go.
+ */
+const AHEAD_AT_ONCE = 3
+
+function pumpAhead(): void {
+  while (aheadRunning < AHEAD_AT_ONCE && aheadQueue.length > 0) {
+    const id = aheadQueue.shift()!
+    if (heldReviews.has(id) || heldReading.has(id)) continue
+    aheadRunning += 1
+    void readHeld(id).finally(() => {
+      aheadRunning -= 1
+      pumpAhead()
+    })
+  }
+}
+
+/** Drop every held review, so the next page reads against the new records. */
+function forgetHeld(): void {
+  heldReviews.clear()
+  heldFailures.clear()
+  heldReading.clear()
+  aheadQueue = []
+}
+
+/** One review the preview is showing: its held answer, never another review's. */
+export interface HeldReview {
+  /** The held answer for the review now asked for, or `null` while none has arrived. */
+  data: ComputedRef<ReviewDetail | null>
+  /** Why the last read of this review failed, when nothing is held for it. */
+  error: ComputedRef<DeskError | null>
+  /** Read the review asked for again, quietly: what is held stays drawn until it answers. */
+  refresh: () => Promise<void>
+}
+
 /**
  * Read the records again from scratch, with some of them replaced.
  *
@@ -999,4 +1126,5 @@ export function useDeskSource(source: DeskSourceName | null): void {
 function forgetShared(): void {
   for (const held of shared.values()) live.delete(held.resource.refresh)
   shared.clear()
+  forgetHeld()
 }

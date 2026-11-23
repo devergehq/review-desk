@@ -1558,6 +1558,20 @@ const selected = ref<string | null>(null)
 
 const currentRows = computed(() => viewRows.value[view.value])
 
+/* The wait before a read, declared ahead of the watch that uses it; "A pointer selects" says why. */
+const RESTS_MS = 120
+let resting: ReturnType<typeof setTimeout> | null = null
+let pointer = { x: -1, y: -1 }
+let pointerAtKey = { x: -2, y: -2 }
+
+/** Whether the selection has stayed put long enough for the preview to read its review. */
+const rested = ref(true)
+
+function stopResting() {
+  if (resting) clearTimeout(resting)
+  resting = null
+}
+
 /**
  * **The first row is selected whenever the selection is not on the page**: on arrival, on a
  * change of tab, and when the find field narrows the selected row away. S1 draws the
@@ -1565,7 +1579,7 @@ const currentRows = computed(() => viewRows.value[view.value])
  * says nothing until a reader learns to press something.
  */
 watch(currentRows, (list) => {
-  if (!list.some(row => row.key === selected.value)) selected.value = list[0]?.key ?? null
+  if (!list.some(row => row.key === selected.value)) selectNow(list[0]?.key ?? null)
 }, { immediate: true })
 
 const selectedRow = computed(() =>
@@ -1581,49 +1595,83 @@ function rowKeyOf(target: EventTarget | null): string | null {
 /** Focus arriving in a row selects it at once: a keyboard means it. */
 function selectFromFocus(event: FocusEvent) {
   const key = rowKeyOf(event.target)
-  if (key) selected.value = key
+  if (key) selectNow(key)
 }
 
 /*
- * **A pointer selects a row once it rests there, and only if it moved to get there.**
+ * **A pointer selects the row it is over at once, and only if it moved to get there.**
  *
- * Two findings of the self-review, round 1. A pointer swept down the list selected every row
- * it crossed, and each selection is a read of that review for the preview — ten rows, ten
- * reads, ten flashes of "Reading the review…" (F6). So it waits 120ms, which a sweep does not
- * and a reader does. And `J` scrolls the selected row into view, which slides a different
- * row under a pointer that has not moved; the browser reports that as the pointer entering
- * the row, and the selection snapped back to it (F7). So a pointer selects only from a
- * position other than where it was when a key last moved the selection.
+ * DEV-1374: the selection used to wait 120ms for the pointer to rest, and the preview was then
+ * remounted and read its review from scratch — half a second to a second per row. Now the
+ * highlight and what the row itself knows follow the pointer with no timer, and **only the
+ * read waits for the rest**: `rested` turns true once the selection has stayed put for
+ * `RESTS_MS`, which a sweep does not and a reader does. So the self-review's F6 still holds —
+ * a pointer swept down ten rows is not ten reads — while the preview keeps up with it.
+ *
+ * F7 holds as it did: `J` scrolls the selected row into view, which slides a different row
+ * under a pointer that has not moved, and the browser reports that as the pointer entering
+ * the row. So a pointer selects only from a position other than where it was when a key last
+ * moved the selection.
  */
-const RESTS_MS = 120
-let resting: ReturnType<typeof setTimeout> | null = null
-let pointer = { x: -1, y: -1 }
-let pointerAtKey = { x: -2, y: -2 }
+
+/** Select a row now; the preview reads its review once it has rested there. */
+function selectAndRest(key: string) {
+  if (key === selected.value) return
+  selected.value = key
+  rested.value = false
+  stopResting()
+  resting = setTimeout(() => {
+    resting = null
+    rested.value = true
+  }, RESTS_MS)
+}
+
+/** A selection a key, a focus or the page made: meant, so read at once. */
+function selectNow(key: string | null) {
+  stopResting()
+  selected.value = key
+  rested.value = true
+}
 
 function selectFromPointer(event: MouseEvent) {
   pointer = { x: event.clientX, y: event.clientY }
   if (pointer.x === pointerAtKey.x && pointer.y === pointerAtKey.y) return
   const key = rowKeyOf(event.target)
-  if (resting) clearTimeout(resting)
-  if (!key) return
-  resting = setTimeout(() => {
-    resting = null
-    selected.value = key
-  }, RESTS_MS)
+  if (key) selectAndRest(key)
 }
 
 /*
- * **Leaving the list cancels a pending selection** (self-review round 2): a pointer that
- * crossed a row on its way to the preview's *Open* or its next action set the timer, and
- * nothing inside the list fired again to clear it — so the preview swapped to the crossed row
- * under the pointer, and the click opened the wrong review.
+ * **Leaving the list ends the wait** (self-review round 2). The bug that rule was written for
+ * was a timer that swapped the preview to a row the pointer had crossed on its way out, under
+ * the click. No timer swaps the preview now: the row the pointer last crossed is the one
+ * already drawn, so leaving only cancels the wait and reads that row now — the pointer has
+ * come to rest, on its preview.
  */
 function leaveList() {
-  if (resting) clearTimeout(resting)
-  resting = null
+  if (!resting) return
+  stopResting()
+  rested.value = true
 }
 
-onBeforeUnmount(leaveList)
+onBeforeUnmount(stopResting)
+
+/*
+ * **The open tab's reviews are read ahead, nearest the selection first** (DEV-1374), so the
+ * first visit to a row is usually drawn from memory too. Three at a time, in
+ * `useReviewDesk`; asked again whenever the rows or the selection move, which replaces
+ * the queue rather than adding to it, and stopped when the page goes.
+ */
+watch([currentRows, selected], ([list, key]) => {
+  const at = Math.max(0, list.findIndex(row => row.key === key))
+  const ids = list
+    .map((row, index) => ({ id: row.reviewId, away: Math.abs(index - at) }))
+    .filter((one): one is { id: number, away: number } => one.id != null)
+    .sort((a, b) => a.away - b.away)
+    .map(one => one.id)
+  desk.readAhead(ids)
+}, { immediate: true })
+
+onBeforeUnmount(() => desk.readAhead([]))
 
 /** Open a row: its review's Overview, or the pull request on GitHub when there is no review. */
 function open(row: ListRow | null) {
@@ -1658,8 +1706,7 @@ function onKey(event: KeyboardEvent) {
   if (key === 'j' || key === 'k') {
     event.preventDefault()
     pointerAtKey = { ...pointer }
-    if (resting) clearTimeout(resting)
-    selected.value = moveSelection(currentRows.value, selected.value, key === 'j' ? 1 : -1)
+    selectNow(moveSelection(currentRows.value, selected.value, key === 'j' ? 1 : -1))
     void nextTick(focusSelected)
     return
   }
@@ -2350,8 +2397,8 @@ function onTabKey(event: KeyboardEvent) {
       </div>
       <ListPreview
         v-else-if="selectedRow"
-        :key="selectedRow.key"
         :row="selectedRow"
+        :rested="rested"
       />
     </aside>
   </div>
