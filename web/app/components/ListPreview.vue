@@ -159,6 +159,18 @@ const facts = computed(() => {
           No brief has been written for this round yet.
         </p>
       </template>
+      <!--
+        A read that failed with nothing held: said, rather than a blank body (self-review
+        round 1). A read ahead can fail for a row nobody has visited yet, and resting on the
+        row reads it again.
+      -->
+      <p
+        v-else
+        class="rd-meta"
+        data-testid="preview-unread"
+      >
+        The review could not be read. {{ held.error.value?.message }}
+      </p>
     </template>
     <p
       v-else

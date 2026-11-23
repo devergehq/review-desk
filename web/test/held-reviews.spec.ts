@@ -10,7 +10,7 @@ import { resetDesk, useReviewDesk } from '../app/composables/useReviewDesk'
  * backend is asked for, because "fewer reads" is the whole claim.
  */
 
-const reads = vi.hoisted(() => ({ ids: [] as number[], slow: null as Promise<void> | null }))
+const reads = vi.hoisted(() => ({ ids: [] as number[], slow: null as Promise<void> | null, failing: new Set<number>() }))
 
 vi.mock('../app/data/sample', async (original) => {
   const actual = await original<typeof import('../app/data/sample')>()
@@ -23,6 +23,7 @@ vi.mock('../app/data/sample', async (original) => {
         getReview: async (id: number) => {
           reads.ids.push(id)
           if (reads.slow) await reads.slow
+          if (reads.failing.has(id)) throw new Error('the server is not answering')
           return backend.getReview(id)
         },
       }
@@ -46,6 +47,7 @@ beforeEach(async () => {
   await resetDesk()
   reads.ids = []
   reads.slow = null
+  reads.failing.clear()
 })
 
 describe('a held review', () => {
@@ -97,6 +99,21 @@ describe('a held review', () => {
     await desk().refreshReads()
     expect(reads.ids).toContain(WEBHOOKS)
   })
+
+  it('says a read failed when nothing is held, and clears it once a read answers', async () => {
+    const id = ref<number | null>(WEBHOOKS)
+    const held = scope.run(() => desk().heldReview(id))!
+    reads.failing.add(WEBHOOKS)
+    desk().readAhead([WEBHOOKS])
+    await drained()
+    expect(held.data.value).toBeNull()
+    expect(held.error.value, 'a failed read ahead is said').not.toBeNull()
+
+    reads.failing.clear()
+    await held.refresh()
+    expect(held.error.value).toBeNull()
+    expect(held.data.value?.review.id).toBe(WEBHOOKS)
+  })
 })
 
 describe('reading ahead', () => {
@@ -128,6 +145,16 @@ describe('reading ahead', () => {
     reads.slow = null
     await drained()
     expect(reads.ids).toEqual([WEBHOOKS, INVOICES, CACHE])
+  })
+
+  it('reads the selected review once when the preview asks while it is read ahead', async () => {
+    /* Self-review round 1: on arrival the selected row was read ahead and then read again. */
+    const id = ref<number | null>(WEBHOOKS)
+    const held = scope.run(() => desk().heldReview(id))!
+    desk().readAhead([WEBHOOKS, INVOICES])
+    void held.refresh()
+    await drained()
+    expect(reads.ids).toEqual([WEBHOOKS, INVOICES])
   })
 
   it('joins a read ahead already in flight rather than asking twice', async () => {

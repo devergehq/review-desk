@@ -463,12 +463,21 @@ export function useReviewDesk() {
    * when nothing is. A write refreshes it like any other read on screen.
    */
   function heldReview(id: Ref<number | null> | ComputedRef<number | null>): HeldReview {
+    /*
+     * **The preview's own read joins one already in flight** — a read ahead of the same
+     * review, say, which on arrival is the selected row's (self-review round 1). Only a write
+     * forces a fresh one, because a read that started before the write may answer with the
+     * review as it was.
+     */
     const refresh = async () => {
+      if (id.value != null) await readHeld(id.value)
+    }
+    const afterWrite = async () => {
       if (id.value != null) await readHeld(id.value, { fresh: true })
     }
-    live.add(refresh)
+    live.add(afterWrite)
     onScopeDispose(() => {
-      live.delete(refresh)
+      live.delete(afterWrite)
     })
     return {
       data: computed(() => (id.value == null ? null : heldReviews.get(id.value) ?? null)),
@@ -1083,7 +1092,7 @@ export interface HeldReview {
   data: ComputedRef<ReviewDetail | null>
   /** Why the last read of this review failed, when nothing is held for it. */
   error: ComputedRef<DeskError | null>
-  /** Read the review asked for again, quietly: what is held stays drawn until it answers. */
+  /** Read the review asked for again, quietly, joining a read in flight: what is held stays drawn. */
   refresh: () => Promise<void>
 }
 
