@@ -6,8 +6,11 @@ import {
   moveSelection,
   numbersSaid,
   rowMatches,
+  selectionFromQuery,
+  selectionQuery,
   sinceYesterday,
   viewFromQuery,
+  viewHolding,
   type ListRow,
 } from '../app/utils/pullRequests'
 
@@ -72,6 +75,29 @@ describe('J and K', () => {
     expect(moveSelection(rows, null, 1)).toBe('a#1')
     expect(moveSelection(rows, 'gone#9', -1)).toBe('a#1')
     expect(moveSelection([], null, 1)).toBeNull()
+  })
+})
+
+describe('a selection in the address', () => {
+  /* DEV-1373: how the sidebar opens the list on a pull request with no round. */
+  const a = row('acme/portal#1', 1)
+  const b = row('acme/portal#2', 2)
+
+  it('carries a row’s key and reads it back, and nothing that is not one', () => {
+    expect(selectionQuery('acme/portal#901')).toEqual({ pr: 'acme/portal#901' })
+    expect(selectionFromQuery('acme/portal#901')).toBe('acme/portal#901')
+    expect(selectionFromQuery(['acme/portal#901', 'x#2'])).toBe('acme/portal#901')
+    expect(selectionFromQuery(undefined)).toBeNull()
+    expect(selectionFromQuery('901')).toBeNull()
+  })
+
+  it('finds the first tab that draws the row, never Every review', () => {
+    const rows = {
+      waiting: [a], reviewing: [b], author: [], own: [], done: [], every: [a, b, row('x/y#3', 3)],
+    }
+    expect(viewHolding(rows, 'acme/portal#2')).toBe('reviewing')
+    expect(viewHolding(rows, 'acme/portal#1')).toBe('waiting')
+    expect(viewHolding(rows, 'x/y#3')).toBeNull()
   })
 })
 

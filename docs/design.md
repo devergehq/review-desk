@@ -82,12 +82,16 @@ conversation has no handle; under 700px nothing does, and the phone's sidebar is
 `web/test/columns.spec.ts` the rules, and `web/e2e/shell.spec.ts` drags each handle.
 
 **How it is built** (DEV-1323). `web/app/layouts/default.vue` is the grid; `AppSidebar` is the
-first column. Six rules it keeps, each in the file that holds it:
+first column. Seven rules it keeps, each in the file that holds it:
 
 - **The groups are read off the record**, never worked out by the page: *Waiting on you* (which
   S1 and S2 draw first and open), *Being reviewed* and *Waiting on the author* from `GET /inbox`'s
   arrays, *Done this week* from the Reviews list's *Finished* view, one row per pull request.
   An empty group still draws, saying *None*. `sidebarGroups` in `web/app/utils/sidebar.ts`.
+- **Every row is a link** (DEV-1373). A row with a round opens its review's Overview, marked
+  `aria-current` while it is open. A pull request GitHub asked for that no round exists of has
+  no review page, so it opens the Pull requests list with that row selected (`/?pr=`, below).
+  No row is drawn as text. `SidebarRows`.
 - **The state word is chosen once**, in `web/app/utils/stateWord.ts`. The sidebar's word is the
   inbox array a pull request is in. **A review the sidebar lists takes that row's word in its own
   header** (`stateOfReview(detail, rowFor(groups, …))`), because the inbox decides from more than
@@ -123,6 +127,13 @@ first column. Six rules it keeps, each in the file that holds it:
   taking a column.
 - **A row opens its review's Overview** (`tabPath`). `J` and `K` move the selection, `Enter`
   opens it, under `keyIsForThePage`.
+- **An address can ask for a selection**: `?pr=acme/portal%23901` selects that pull request
+  in the tab that draws it. It is how the list is reached for a row with no round. It is
+  taken once, on arrival: the address is replaced with that tab's `?view=`, so the find field
+  cannot move the tab and the same sidebar row clicked again is a navigation of its own. A
+  repository filter or find text that hides the row is cleared rather than leaving it off the
+  page, and choosing a tab drops an ask nothing took. An ask for a pull request no longer on
+  the desk is dropped once both reads have answered. `selectionFromQuery` and `viewHolding`.
 - **The preview beside it draws the selected row from the record**: the bottom line from
   `bottomLine` in `web/app/utils/theCase.ts` — the brief's headline and `answerFacts`, and the
   one helper the Overview draws it with too — the state, the findings, what was not checked,

@@ -78,6 +78,13 @@ async function settle(page: VueWrapper) {
   }
 }
 
+/**
+ * A test's time limit when it navigates the mounted page in-app and waits for the list to
+ * follow. The replace lands after several `settle` rounds here (DEV-1373's self-review, P6),
+ * and a CI runner took 5–6s where the default limit is 5s.
+ */
+const SLOW_ROUTE_MS = 20_000
+
 /** Mount a screen and wait for its first read. */
 async function shown(
   component: Parameters<typeof mountSuspended>[0],
@@ -186,6 +193,25 @@ describe('the shell', () => {
     expect(page.findAll('#sidebar .none').map(one => one.text())).toEqual(['None', 'None', 'None', 'None'])
     /* And nothing records a read of GitHub, so there is no line claiming one. */
     expect(page.find('#sidebar').text()).not.toContain('GitHub read')
+  })
+
+  it('links every sidebar row, the one with no round to the list with it selected', async () => {
+    /*
+     * **DEV-1373.** A row GitHub asked for that no round exists of was a `div`, so clicking
+     * it did nothing — "the actual PRs I can't select". It has no review page; it opens the
+     * Pull requests list with that pull request selected.
+     */
+    const page = await shown(Layout)
+    const rows = page.findAll('#sidebar .side-row')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      expect(row.element.tagName, row.text()).toBe('A')
+      expect(row.attributes('href'), row.text()).toBeTruthy()
+    }
+    const unstarted = rows.find(row => row.text().includes('#104'))!
+    expect(unstarted.text()).toContain('Not started')
+    expect(unstarted.attributes('href')).toBe('/?pr=acme/billing-api%23104')
+    expect(page.html()).not.toContain('/reviews/null')
   })
 
   it('opens the review being read in the sidebar', async () => {
@@ -3039,6 +3065,116 @@ describe('a pull request nobody has picked up', () => {
     /* And how long it has waited, from when GitHub asked rather than when it was told. */
     expect(row.text()).toMatch(/\d+ days? ago/)
     expect(row.text()).not.toContain('no time recorded')
+  })
+
+  it('selects the pull request the address names, in the tab that draws it', async () => {
+    /*
+     * **DEV-1373: the sidebar's way in for a row with no round.** `?pr=` names no tab, so the
+     * list opens the one that draws the row — *Being reviewed* for a request nobody started —
+     * and the preview draws it rather than the first row.
+     */
+    const page = await shown(Inbox, { route: '/?pr=acme%2Fbilling-api%23104' })
+    /* The tab follows the replaced address, which lands a few ticks after the first read. */
+    await vi.waitFor(() =>
+      expect(page.find('[role="tab"][aria-selected="true"]').text()).toMatch(/^Being reviewed/))
+    const selected = page.findAll('#panel-reviewing .queue-line--selected')
+    expect(selected).toHaveLength(1)
+    expect(selected[0]!.text()).toContain('#104')
+    expect(page.find('[data-testid="list-preview"]').attributes('aria-label')).toBe('#104, previewed')
+  })
+
+  it('takes the address’s pull request once, so the find field cannot move the tab', async () => {
+    /*
+     * Self-review round 1, F1 and F2. The tab was worked out from `?pr=` on every render, over
+     * rows the find field narrows, so typing `409` flipped the list to an empty *Waiting on
+     * you*; and the address kept `?pr=` after `J`, so clicking that sidebar row again was a
+     * navigation to where the reader already was. Taken once and replaced, it is neither.
+     */
+    const page = await shown(Inbox, { route: '/?pr=acme%2Fbilling-api%23104' })
+    await vi.waitFor(() => {
+      const query = page.vm.$router.currentRoute.value.query
+      expect(query.pr, 'the ask is taken').toBeUndefined()
+      expect(query.view, 'and the tab it found is the address now').toBe('reviewing')
+    })
+
+    await page.find('input#start').setValue('409')
+    await settle(page)
+    expect(page.find('[role="tab"][aria-selected="true"]').text()).toMatch(/^Being reviewed/)
+  })
+
+  it('lifts a repository filter that hides the pull request the address asks for', async () => {
+    /* Self-review round 2, F3: the ask was never found, and the click went nowhere. */
+    const page = await shown(Inbox)
+    await page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/portal'))!.trigger('click')
+    await settle(page)
+    await page.vm.$router.push('/?pr=acme%2Fbilling-api%23104')
+    await vi.waitFor(async () => {
+      await settle(page)
+      expect(page.findAll('[role="radio"]').find(one => one.text() === 'All repositories')!
+        .attributes('aria-checked')).toBe('true')
+      expect(page.find('#panel-reviewing .queue-line--selected').text()).toContain('#104')
+    }, { timeout: 5000 })
+  }, SLOW_ROUTE_MS)
+
+  it('clears find text that hides the pull request the address asks for', async () => {
+    /* Self-review round 2, F6: the first row was selected and previewed in its place. */
+    const page = await shown(Inbox)
+    await page.find('input#start').setValue('409')
+    await settle(page)
+    await page.vm.$router.push('/?pr=acme%2Fbilling-api%23104')
+    await vi.waitFor(async () => {
+      await settle(page)
+      expect((page.find('input#start').element as HTMLInputElement).value).toBe('')
+      expect(page.find('#panel-reviewing .queue-line--selected').text()).toContain('#104')
+    }, { timeout: 5000 })
+  }, SLOW_ROUTE_MS)
+
+  it('drops an ask nothing took when a tab is chosen', async () => {
+    /* Self-review round 2, F4: it rode along on every tab the reader chose. */
+    const page = await shown(Inbox, { route: '/?pr=acme%2Fportal%2399999' })
+    await page.findAll('[role="tab"]').find(one => one.text().startsWith('Being reviewed'))!.trigger('click')
+    await vi.waitFor(async () => {
+      await settle(page)
+      const query = page.vm.$router.currentRoute.value.query
+      expect(query.pr).toBeUndefined()
+      expect(query.view).toBe('reviewing')
+    }, { timeout: 5000 })
+  }, SLOW_ROUTE_MS)
+
+  it('drops an ask no tab holds, so the repository filter can still be chosen', async () => {
+    /*
+     * Self-review round 3: the ask was never dropped, so the watch that lifts a hiding filter
+     * reset every repository the reader chose back to *All*.
+     */
+    const page = await shown(Inbox, { route: '/?pr=acme%2Fportal%2399999' })
+    await vi.waitFor(async () => {
+      await settle(page)
+      expect(page.vm.$router.currentRoute.value.query.pr).toBeUndefined()
+    }, { timeout: 5000 })
+    await page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/billing-api'))!.trigger('click')
+    await settle(page)
+    await settle(page)
+    expect(page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/billing-api'))!
+      .attributes('aria-checked')).toBe('true')
+  }, SLOW_ROUTE_MS)
+
+  it('keeps the repository filter for an ask that is not on the desk', async () => {
+    const page = await shown(Inbox)
+    await page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/billing-api'))!.trigger('click')
+    await settle(page)
+    await page.vm.$router.push('/?pr=acme%2Fportal%2399999')
+    await vi.waitFor(async () => {
+      await settle(page)
+      expect(page.vm.$router.currentRoute.value.query.pr).toBeUndefined()
+    }, { timeout: 5000 })
+    expect(page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/billing-api'))!
+      .attributes('aria-checked')).toBe('true')
+  }, SLOW_ROUTE_MS)
+
+  it('selects the first row when the address names a pull request no tab draws', async () => {
+    const page = await shown(Inbox, { route: '/?pr=acme%2Fportal%2399999' })
+    expect(page.find('[role="tab"][aria-selected="true"]').text()).toMatch(/^Waiting on you/)
+    expect(page.findAll('#panel-waiting .queue-line--selected')).toHaveLength(1)
   })
 
   it('draws no second row for a pull request another group already holds', async () => {
