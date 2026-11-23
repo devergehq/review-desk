@@ -454,6 +454,20 @@ test.describe('the side columns’ handles', () => {
     await expect.poll(() => width(page, '.shell-conversation')).toBe(720)
   })
 
+  test('a press that does not move leaves the width that was set alone', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('review-desk:width:sidebar', '480'))
+    await page.setViewportSize({ width: 1100, height: 900 })
+    await open(page, `reviews/${reviewId}`)
+    expect(await width(page, '#sidebar'), 'drawn narrower than set at 1,100').toBe(320)
+    const box = (await handle(page, 'sidebar').boundingBox())!
+    await page.mouse.move(box.x + 4, box.y + 300)
+    await page.mouse.down()
+    await page.mouse.move(box.x + 4, box.y + 302)
+    await page.mouse.up()
+    await page.setViewportSize({ width: 1920, height: 900 })
+    await expect.poll(() => width(page, '#sidebar'), 'what was set comes back with the room').toBe(480)
+  })
+
   test('with storage blocked the shell draws at its defaults, and nothing throws', async ({ page }) => {
     const thrown: string[] = []
     page.on('pageerror', error => thrown.push(error.message))
@@ -487,5 +501,35 @@ test.describe('the side columns’ handles', () => {
     await expect(page.locator('[role="separator"][data-column]:visible')).toHaveCount(0)
     await openOnAPhone(page, '')
     await expect(page.locator('[role="separator"][data-column]:visible')).toHaveCount(0)
+  })
+})
+
+test.describe('with a classic scrollbar', () => {
+  const width = async (page: Page, selector: string) =>
+    Math.round((await page.locator(selector).boundingBox())!.width)
+
+  /*
+   * **A classic scrollbar arriving after the shell mounted** narrows what the grid divides
+   * and fires no `resize` (#114's self-review, F1). Headless Chromium hides scrollbars and a
+   * Mac draws them over the page, so this browser is launched without `--hide-scrollbars`
+   * and a scrollbar that takes 15px is styled in, after load.
+   */
+  test('a scrollbar that arrives after load still leaves the main column 480px', async ({ playwright }) => {
+    /* Its own browser: `--hide-scrollbars` is a launch flag, and the suite's browser has it. */
+    const browser = await playwright.chromium.launch({ ignoreDefaultArgs: ['--hide-scrollbars'] })
+    const context = await browser.newContext({ storageState: 'e2e/.signed-in.json', viewport: { width: 1100, height: 600 } })
+    const page = await context.newPage()
+    await page.addInitScript(() => {
+      localStorage.setItem('review-desk:width:sidebar', '480')
+      localStorage.setItem('review-desk:width:conversation', '720')
+    })
+    await open(page, `reviews/${reviewId}/findings`)
+    expect(await width(page, '#sidebar'), 'no scrollbar yet: 1,100 − 480 − 300').toBe(320)
+    await page.addStyleTag({ content: '::-webkit-scrollbar { width: 15px } ::-webkit-scrollbar-thumb { background: #888 }' })
+    const gutter = await page.evaluate(() => window.innerWidth - document.documentElement.clientWidth)
+    expect(gutter, 'the scrollbar takes width, or this test proves nothing').toBe(15)
+    await expect.poll(async () => Math.round((await page.locator('main#main').boundingBox())!.width))
+      .toBeGreaterThanOrEqual(480)
+    await browser.close()
   })
 })

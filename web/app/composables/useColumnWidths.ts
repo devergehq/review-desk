@@ -55,6 +55,13 @@ function start() {
   }
   measure()
   window.addEventListener('resize', measure)
+  /*
+   * **And when a classic scrollbar comes or goes**, which changes what the grid divides by
+   * its width (15px on Windows) and fires no `resize`: a review's content arriving after the
+   * layout mounted, or a long page followed by a short one. The root element's box is what
+   * the scrollbar narrows, so that is what is watched (#114's self-review, F1).
+   */
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(measure).observe(document.documentElement)
 }
 
 function keep(column: Column, width: number | null) {

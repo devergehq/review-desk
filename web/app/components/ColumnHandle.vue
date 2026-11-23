@@ -46,7 +46,12 @@ function down(event: PointerEvent) {
 function move(event: PointerEvent) {
   if (!from || event.pointerId !== from.pointer) return
   const dx = event.clientX - from.x
-  if (dx !== 0) from.moved = true
+  /*
+   * Nothing across yet is not a drag: setting the width now would write the drawn width over
+   * the one that was set, where the window has made them differ (#114's self-review, F2).
+   */
+  if (dx === 0 && !from.moved) return
+  from.moved = true
   setWidth(props.column, from.width + (props.edge === 'right' ? dx : -dx), false)
 }
 
