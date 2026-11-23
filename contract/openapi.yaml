@@ -626,7 +626,8 @@ paths:
         `unreachable`, still with a 200, because the review itself was read fine.
 
         It only ever asks. Nothing here approves, posts, answers a permission prompt or
-        writes to the session, and the session's own address is not served.
+        writes to the session, and the session's own address is not served. (The one notice
+        Review Desk has Allele hand a session is `askSession`'s, DEV-1383.)
       responses:
         '200':
           description: The session the record names, and what Allele said of it.
@@ -650,7 +651,9 @@ paths:
         draft was sent back with, and the session's replies. Decided on 30 October 2026 in
         DEV-1140 (option A) and built in DEV-1141: the conversation is kept in the record
         and delivered by Locus, whose review watcher reads the undelivered ones with
-        `review-desk message list --unread` and marks each read before acting on it.
+        `review-desk message list --unread` and marks each read before acting on it. Since
+        23 November 2026 (DEV-1383), with Allele present, an `ask` is also handed to the
+        session through Allele: see `askSession`.
 
         **No message signs anything off.** A message can ask for an explanation or for
         rework; approving, confirming and posting are not messages.
@@ -671,9 +674,13 @@ paths:
       description: |
         **The developer's act, and the only way a developer's message is written** — there
         is no command for it, so a session cannot put a question in the developer's mouth.
-        It is stored and nothing more: Review Desk delivers nothing and never writes into a
-        session. Sending the draft back is still `sendBackDraft`, which keeps its note in
-        this conversation too.
+        It is stored first. Then, with Allele present, Review Desk asks Allele to hand the
+        review's session a notice that points at it (DEV-1383, reversing on 23 Nov 2026 the
+        rule that Review Desk never writes into a session): off this request, so the 201
+        never waits on Allele, and never the question's own words. Allele owns the delivery;
+        `handed_over_at` and `handed_over_count` say when it did. Without Allele, the Locus
+        watcher delivers it. Sending the draft back is still `sendBackDraft`, which keeps its
+        note in this conversation too, and is never handed over.
       requestBody:
         required: true
         content:
@@ -2938,7 +2945,7 @@ components:
     ReviewMessage:
       type: object
       additionalProperties: false
-      required: [review_id, seq, step, author, kind, body, in_reply_to, created_at, read_at, read_by_session, about, parsed, answer, superseded_by, suggestion_answers]
+      required: [review_id, seq, step, author, kind, body, in_reply_to, created_at, read_at, read_by_session, handed_over_at, handed_over_count, about, parsed, answer, superseded_by, suggestion_answers]
       description: |
         One message on a review. The developer writes `ask` and `send_back`; the session
         writes `reply`. The record refuses any other pairing.
@@ -2974,6 +2981,25 @@ components:
         read_by_session:
           type: [string, 'null']
           description: The session it was delivered to, as the deliverer named it.
+        handed_over_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When Review Desk last asked Allele to hand this question to the review's session
+            and Allele did not say it had failed (DEV-1383), or null while it never has. That
+            is Allele answering `prompted`, or an answer that leaves it uncertain — such as
+            `prompt_delivery_unconfirmed`, or none within 15 s — because the notice may then
+            be in front of the session. Only an `ask` is ever handed over, and only with
+            Allele present. A handover is not a reading: `read_at` still says the session
+            marked it read.
+        handed_over_count:
+          type: integer
+          minimum: 0
+          maximum: 3
+          description: |
+            How many times it has been handed over, counted as `handed_over_at` is: at most
+            three, no sooner than two minutes apart, and never once it is read. Nought on every message that is not
+            an `ask`, and on every message written before this field.
         about: { $ref: '#/components/schemas/MessageAbout' }
         parsed:
           type: boolean

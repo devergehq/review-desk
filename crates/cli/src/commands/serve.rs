@@ -56,9 +56,10 @@ pub struct ServeArgs {
     ///
     /// Defaults to Allele's own socket, `~/.allele/control.sock`. **Optional in every
     /// sense**: when nothing is there, the review pages draw no session strip and nothing
-    /// else changes. The server only ever asks `sessions_status`; it never writes to a
-    /// session. `crates/server/src/allele.rs` says what it reads and how it answers when
-    /// Allele does not.
+    /// else changes. The server asks `sessions_status`, and, when the developer asks a
+    /// question, asks Allele to hand the session a notice pointing at it (DEV-1383).
+    /// `crates/server/src/allele.rs` says what it asks and how it answers when Allele does
+    /// not; `crates/server/src/handover.rs` says what is handed over.
     #[arg(long, value_name = "PATH")]
     allele_socket: Option<PathBuf>,
 }

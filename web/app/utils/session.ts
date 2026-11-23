@@ -130,6 +130,11 @@ export function sessionAnswered(reading: SessionReading | null | undefined): boo
  * Before this it said *Not read yet* and nothing else, so a stopped watcher looked exactly
  * like one between passes. Until the session read has answered at all it still says only
  * that, rather than claim nothing has checked.
+ *
+ * **Handed over, not read** (DEV-1383) comes first: with Allele present, the server asks
+ * Allele to put a notice in front of the session, and the line says when it last did and,
+ * after the first, how many times. A handover is not a reading, so the line still begins
+ * "Not read yet". A question never handed over falls through to the last-checked lines.
  */
 export function deliveryLine(
   message: ReviewMessage,
@@ -147,6 +152,8 @@ export function deliveryLine(
     case 'awaiting_input':
       return 'Not delivered · the session is waiting on a permission prompt'
   }
+  const handed = handedOverLine(message, now)
+  if (handed != null) return handed
   if (session == null) return 'Not read yet'
   const waited = secondsSince(session.messages_checked_at, now)
   if (waited == null) return 'Not read yet · nothing has checked for messages on this review'
@@ -155,6 +162,16 @@ export function deliveryLine(
   }
   return `Not read yet · the session hasn't checked for messages in ${durationLabel(waited)}, `
     + 'so its watcher may have stopped'
+}
+
+/** "Not read yet · handed to the session 20 sec ago", or `null` when it never has been. */
+function handedOverLine(message: ReviewMessage, now: Date): string | null {
+  const times = message.handed_over_count
+  if (times < 1 || message.handed_over_at == null) return null
+  const when = agoLabel(message.handed_over_at, now) ?? 'at an unrecorded time'
+  return times === 1
+    ? `Not read yet · handed to the session ${when}`
+    : `Not read yet · handed to the session ${times} times, most recently ${when}`
 }
 
 /**

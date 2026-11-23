@@ -83,7 +83,7 @@ export default defineConfig({
        * argument in its own header.
        */
       name: 'desk',
-      testMatch: /(review-desk|header-links|what-happened|replies|rounds|queue-rounds|shell|shown|redirects|findings|suggestions|answering|phone-sheet|preview|sidebar-select)\.spec\.ts/,
+      testMatch: /(review-desk|header-links|what-happened|replies|rounds|queue-rounds|shell|shown|redirects|findings|suggestions|answering|phone-sheet|preview|sidebar-select|handover)\.spec\.ts/,
     },
     {
       /*

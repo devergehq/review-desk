@@ -55,6 +55,8 @@ function message(over: Partial<ReviewMessage>): ReviewMessage {
     created_at: '2026-11-21T06:00:00Z',
     read_at: null,
     read_by_session: null,
+    handed_over_at: null,
+    handed_over_count: 0,
     about: { tab: 'findings', finding: null },
     parsed: false,
     answer: null,

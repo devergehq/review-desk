@@ -2549,6 +2549,10 @@ fn every_response_example_can_be_produced_from_the_store() {
         let asked = store
             .ask_session(review, ReviewLayerName::Draft, "Why is F13 a Should?")
             .expect("asking");
+        // DEV-1383: handed to the session through Allele before the session read it.
+        store
+            .record_handover(review, asked.seq)
+            .expect("handing over");
         store
             .mark_message_read(review, asked.seq, Some("allele-ae03f8ce"))
             .expect("delivering");
@@ -2630,6 +2634,8 @@ fn every_response_example_can_be_produced_from_the_store() {
                 "created_at": message.created_at,
                 "read_at": message.read_at,
                 "read_by_session": message.read_by_session,
+                "handed_over_at": message.handed_over_at,
+                "handed_over_count": message.handed_over_count,
                 "about": message.about,
                 "parsed": message.parsed(),
                 "answer": message.answer,

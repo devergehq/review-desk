@@ -86,6 +86,8 @@ describe('whether a message has reached the session', () => {
     created_at: '2026-10-30T11:00:00Z',
     read_at: null,
     read_by_session: null,
+    handed_over_at: null,
+    handed_over_count: 0,
     about: { tab: 'draft', finding: null },
     parsed: false,
     answer: null,
@@ -161,6 +163,47 @@ describe('whether a message has reached the session', () => {
   it('claims nothing about a check before the session read has answered', () => {
     expect(deliveryLine(asked, null, now)).toBe('Not read yet')
     expect(deliveryLine(asked, undefined, now)).toBe('Not read yet')
+  })
+
+  it('says when Allele handed it to the session, once', () => {
+    const once = { ...asked, handed_over_at: '2026-10-30T11:04:40Z', handed_over_count: 1 }
+    expect(deliveryLine(once, session('running', '2026-10-30T11:04:50Z'), now))
+      .toBe('Not read yet · handed to the session 20 sec ago')
+    expect(deliveryLine(once, null, now))
+      .toBe('Not read yet · handed to the session 20 sec ago')
+  })
+
+  it('says how many times, and when most recently, after the first', () => {
+    const thrice = { ...asked, handed_over_at: '2026-10-30T11:01:00Z', handed_over_count: 3 }
+    expect(deliveryLine(thrice, session('finished', '2026-10-30T11:04:50Z'), now))
+      .toBe('Not read yet · handed to the session 3 times, most recently 4 min ago')
+  })
+
+  it('keeps gone and waiting on a permission prompt over a handover', () => {
+    const once = { ...asked, handed_over_at: '2026-10-30T11:04:40Z', handed_over_count: 1 }
+    expect(deliveryLine(once, session('gone', '2026-10-30T11:04:50Z'), now)).toContain('the session is gone')
+    expect(deliveryLine(once, session('awaiting_input', '2026-10-30T11:04:50Z'), now)).toContain('permission prompt')
+  })
+
+  it('says the handover ahead of when the session last checked, however long ago', () => {
+    const once = { ...asked, handed_over_at: '2026-10-30T11:04:40Z', handed_over_count: 1 }
+    expect(deliveryLine(once, session('finished', '2026-10-30T10:30:00Z'), now))
+      .toBe('Not read yet · handed to the session 20 sec ago')
+    expect(deliveryLine(once, session('finished', null), now))
+      .toBe('Not read yet · handed to the session 20 sec ago')
+    expect(deliveryLine(asked, session('finished', null), now))
+      .toBe('Not read yet · nothing has checked for messages on this review')
+  })
+
+  it('says read, not handed over, once the session has marked it read', () => {
+    const read = {
+      ...asked,
+      handed_over_at: '2026-10-30T11:01:00Z',
+      handed_over_count: 1,
+      read_at: '2026-10-30T11:04:00Z',
+      read_by_session: 'allele-1',
+    }
+    expect(deliveryLine(read, null, now)).toBe('Read by allele-1 1 min ago')
   })
 
   it('says nothing about a reply, which is read by being on the page', () => {

@@ -1,10 +1,12 @@
 //! What the developer and a review's session say to each other. Migration 22.
 //!
-//! **The conversation is kept with the review, and Review Desk delivers none of it.**
-//! DEV-1140 (option A): the developer writes from the dashboard, the record keeps it, the
-//! review worker's watcher in Locus reads [`Store::unread_messages`] and hands it to the
-//! session, and the session answers with `review-desk message reply`. Review Desk never
-//! writes into a session, so it still depends on nothing.
+//! **The conversation is kept with the review.** DEV-1140 (option A): the developer writes
+//! from the dashboard, the record keeps it, the review worker's watcher in Locus reads
+//! [`Store::unread_messages`] and hands it to the session, and the session answers with
+//! `review-desk message reply`. Since 23 November 2026 (DEV-1383), with Allele present, the
+//! server also asks Allele to hand the session a notice pointing at an `ask`:
+//! [`Store::messages_to_hand_over`] is what it may hand over, and [`Store::record_handover`]
+//! what it records. Without Allele, nothing here changes, and Review Desk depends on nothing.
 //!
 //! Three verbs, split by who may use them, which is the whole of the safety argument:
 //!
@@ -36,14 +38,34 @@
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use crate::answer::{About, Answer, AnswerKind, ReviewTab};
+use crate::entities::inbox::IN_PLAY;
 use crate::error::{Result, StoreError};
 use crate::model::{MessageAuthor, MessageKind, ReviewLayerName, ReviewMessage, Timestamp};
 use crate::Store;
 
+/// How long after a handover the same unread question may be handed over again, in seconds.
+///
+/// Two minutes: long enough for a session that was handed a notice to have read it and
+/// marked it read, so a second notice means the first did not land rather than that it is
+/// still being acted on. DEV-1383.
+pub const HANDOVER_AGAIN_AFTER_SECS: i64 = 120;
+
+/// How many times one question is handed over before Review Desk stops asking Allele and
+/// leaves it to the watcher. DEV-1383.
+pub const HANDOVER_AT_MOST: i64 = 3;
+
+/// A developer's question Allele may be asked to hand to its review's session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Handover {
+    pub message: ReviewMessage,
+    /// The review's session, as the record names it. Never empty.
+    pub session_id: String,
+}
+
 /// The columns a [`ReviewMessage`] is read from, in the order [`row_to_message`] takes them.
 const MESSAGE_COLUMNS: &str = "review_id, seq, step, author, kind, body, in_reply_to,
                                created_at, read_at, read_by_session, tab, about_finding,
-                               answer";
+                               answer, handed_over_at, handed_over_count";
 
 fn row_to_message(row: &Row) -> rusqlite::Result<ReviewMessage> {
     let tab: String = row.get(10)?;
@@ -72,6 +94,8 @@ fn row_to_message(row: &Row) -> rusqlite::Result<ReviewMessage> {
         created_at: row.get(7)?,
         read_at: row.get(8)?,
         read_by_session: row.get(9)?,
+        handed_over_at: row.get(13)?,
+        handed_over_count: row.get(14)?,
         about: About {
             tab,
             finding: row.get(11)?,
@@ -416,6 +440,80 @@ impl Store {
                 entity: "message",
                 id: format!("{seq} on review {review_id}"),
             })
+    }
+
+    /// Every question that may be handed to its session now, oldest first — DEV-1383.
+    ///
+    /// **An `ask` and nothing else**: a send-back stays with the watcher, which marks it read
+    /// itself. It must be unread, on a review that names a session, and either never handed
+    /// over or last handed over more than [`HANDOVER_AGAIN_AFTER_SECS`] ago, fewer than
+    /// [`HANDOVER_AT_MOST`] times.
+    pub fn messages_to_hand_over(&self) -> Result<Vec<Handover>> {
+        self.handovers(None)
+    }
+
+    /// One question, if it may be handed over now by the rule [`Store::messages_to_hand_over`]
+    /// keeps. `None` for one that may not, including one that is not there.
+    pub fn message_to_hand_over(&self, review_id: i64, seq: i64) -> Result<Option<Handover>> {
+        Ok(self.handovers(Some((review_id, seq)))?.into_iter().next())
+    }
+
+    fn handovers(&self, only: Option<(i64, i64)>) -> Result<Vec<Handover>> {
+        let (review_id, seq) = only.unzip();
+        // **Only a review still in play**: a question on one dismissed, or whose pull request
+        // has merged or closed, is in front of nobody, and no session is handed it.
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT m.*, v.session_id
+               FROM (SELECT {MESSAGE_COLUMNS}
+                       FROM review_messages
+                      WHERE author = 'developer' AND kind = 'ask' AND read_at IS NULL
+                        AND handed_over_count < ?1
+                        AND (handed_over_at IS NULL OR handed_over_at < ?2)
+                        AND (?3 IS NULL OR (review_id = ?3 AND seq = ?4))) m
+               JOIN reviews v ON v.id = m.review_id
+              WHERE v.session_id IS NOT NULL AND v.session_id <> ''
+                AND {IN_PLAY}
+              ORDER BY m.created_at, m.review_id, m.seq"
+        ))?;
+        let rows = statement.query_map(
+            params![
+                HANDOVER_AT_MOST,
+                self.now() - HANDOVER_AGAIN_AFTER_SECS,
+                review_id,
+                seq
+            ],
+            |row| {
+                Ok(Handover {
+                    message: row_to_message(row)?,
+                    session_id: row.get(15)?,
+                })
+            },
+        )?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Record that Allele said it handed this question to the session: now, and once more.
+    ///
+    /// **Only an `ask` is ever recorded**, so a send-back or a reply named here is refused
+    /// rather than counted. Nothing else changes: the message is still unread until the
+    /// session marks it read.
+    pub fn record_handover(&self, review_id: i64, seq: i64) -> Result<ReviewMessage> {
+        let message = self.message(review_id, seq)?;
+        if message.kind != MessageKind::Ask {
+            return Err(StoreError::InvalidValue {
+                field: "seq",
+                value: seq.to_string(),
+                expected: "one of the developer's questions: only an ask is handed to a session"
+                    .to_string(),
+            });
+        }
+        self.conn.execute(
+            "UPDATE review_messages
+                SET handed_over_at = ?1, handed_over_count = handed_over_count + 1
+              WHERE review_id = ?2 AND seq = ?3",
+            params![self.now(), review_id, seq],
+        )?;
+        self.message(review_id, seq)
     }
 
     #[allow(clippy::too_many_arguments)]

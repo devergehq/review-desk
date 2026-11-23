@@ -96,6 +96,12 @@
 //! Version 26 is the answer contract (DEV-1332): a session's reply kept as the contract
 //! parsed it, beside its raw body, with the flag that says whether it parsed — and, on every
 //! message, the tab it sits on and the finding it is about, backfilled from its step.
+//!
+//! Version 28 is when a review's session last checked for the developer's messages
+//! (DEV-1381). Version 29 is when a developer's question was last handed to the review's
+//! session through Allele, and how many times (DEV-1383); it was written as 28 and
+//! renumbered when DEV-1381's 28 merged first. Nullable and nought on every row already
+//! held, so a message written before it reads as never handed over.
 
 use rusqlite::Connection;
 
@@ -2087,6 +2093,23 @@ CREATE TABLE message_checks (
     review_id  INTEGER PRIMARY KEY REFERENCES reviews (id) ON DELETE CASCADE,
     checked_at INTEGER NOT NULL
 );
+"#,
+    },
+    Migration {
+        version: 29,
+        name: "message-handover",
+        sql: r#"
+-- **When Review Desk last asked Allele to hand a developer's question to the review's
+-- session, and how many times it has** -- DEV-1383. Decided on 23 November 2026: with
+-- Allele present, an ask is handed over through Allele's `sessions_prompt` the moment it is
+-- asked, rather than waiting for the Locus watcher's next pass.
+--
+-- A handover is not a reading. `read_at` still says the session marked the message read;
+-- these two say only that Allele was asked to put a notice in front of it and said it did.
+-- Every row already held reads as never handed over: null and nought.
+ALTER TABLE review_messages ADD COLUMN handed_over_at INTEGER;
+ALTER TABLE review_messages ADD COLUMN handed_over_count INTEGER NOT NULL DEFAULT 0
+    CHECK (handed_over_count >= 0);
 "#,
     },
 ];

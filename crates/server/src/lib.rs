@@ -67,6 +67,7 @@ pub mod developer;
 pub mod error;
 pub mod github;
 pub mod guard;
+pub mod handover;
 pub mod hostname;
 pub mod route;
 pub mod store;
@@ -76,6 +77,7 @@ use std::future::{Future, IntoFuture};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use axum::body::{to_bytes, Body};
 use axum::extract::{Request, State};
@@ -90,6 +92,7 @@ pub use crate::api::{Answered, Api, API_PREFIX};
 pub use crate::developer::Developer;
 pub use crate::error::{ApiError, Code};
 pub use crate::github::Github;
+pub use crate::handover::{Handover, Say};
 pub use crate::hostname::{Hostname, HostnameError};
 pub use crate::store::Records;
 
@@ -139,6 +142,9 @@ pub struct Server {
     api: Api,
     proxied: Option<Hostname>,
     developer: Developer,
+    /// How often the handover thread sweeps, and where it says what it says. DEV-1383.
+    sweep_every: Duration,
+    say: Say,
 }
 
 impl Server {
@@ -176,6 +182,8 @@ impl Server {
             // Answering to a name is asked for, never assumed.
             proxied: None,
             developer,
+            sweep_every: handover::SWEEP_EVERY,
+            say: Say::standard_error(),
         })
     }
 
@@ -215,6 +223,34 @@ impl Server {
         self
     }
 
+    /// Sweep for questions to hand over this often, rather than every fifteen seconds.
+    ///
+    /// For the tests, which cannot wait fifteen seconds for each sweep.
+    pub fn sweeping_every(mut self, every: Duration) -> Self {
+        self.sweep_every = every;
+        self
+    }
+
+    /// Say that Allele is too old to hand a question over here, rather than on standard
+    /// error. For the tests, which read it back.
+    pub fn saying_to(mut self, say: Say) -> Self {
+        self.say = say;
+        self
+    }
+
+    /// Start the handover thread, when there is an Allele socket to ask (DEV-1383), and
+    /// give the API the way to nudge it.
+    fn start_handover(&mut self) -> Option<handover::Running> {
+        let (nudger, running) = Handover::new(
+            self.api.records().clone(),
+            self.api.allele().clone(),
+            self.say.clone(),
+        )
+        .start(self.sweep_every)?;
+        self.api = self.api.clone().handing_over_through(nudger);
+        Some(running)
+    }
+
     /// The address actually bound.
     pub fn address(&self) -> SocketAddr {
         self.address
@@ -230,7 +266,8 @@ impl Server {
     /// **Synchronous, and it owns its runtime.** Nothing above this — not `serve.rs`, not
     /// `main` — is async or knows that a runtime exists, which is what keeps the choice of
     /// transport a detail of this file.
-    pub fn serve(self) {
+    pub fn serve(mut self) {
+        let _handover = self.start_handover();
         let runtime = runtime();
         runtime.block_on(run(
             self.listener,
@@ -247,7 +284,8 @@ impl Server {
     /// This is how the tests drive a real server over a real socket: the acceptance
     /// criteria are about what a client sees on `127.0.0.1`, and a test that called the
     /// handlers directly would not have checked that.
-    pub fn spawn(self) -> Running {
+    pub fn spawn(mut self) -> Running {
+        let handover = self.start_handover();
         let address = self.address;
         let stopping = Arc::new(Notify::new());
         let signal = Arc::clone(&stopping);
@@ -272,6 +310,7 @@ impl Server {
             address,
             stopping,
             worker: Some(worker),
+            _handover: handover,
         }
     }
 }
@@ -334,6 +373,8 @@ pub struct Running {
     address: SocketAddr,
     stopping: Arc<Notify>,
     worker: Option<thread::JoinHandle<()>>,
+    /// Stopped after the HTTP thread, by being dropped with this.
+    _handover: Option<handover::Running>,
 }
 
 impl Running {
