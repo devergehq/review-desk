@@ -519,17 +519,29 @@ test.describe('with a classic scrollbar', () => {
     const browser = await playwright.chromium.launch({ ignoreDefaultArgs: ['--hide-scrollbars'] })
     const context = await browser.newContext({ storageState: 'e2e/.signed-in.json', viewport: { width: 1100, height: 600 } })
     const page = await context.newPage()
-    await page.addInitScript(() => {
-      localStorage.setItem('review-desk:width:sidebar', '480')
-      localStorage.setItem('review-desk:width:conversation', '720')
-    })
-    await open(page, `reviews/${reviewId}/findings`)
-    expect(await width(page, '#sidebar'), 'no scrollbar yet: 1,100 − 480 − 300').toBe(320)
-    await page.addStyleTag({ content: '::-webkit-scrollbar { width: 15px } ::-webkit-scrollbar-thumb { background: #888 }' })
-    const gutter = await page.evaluate(() => window.innerWidth - document.documentElement.clientWidth)
-    expect(gutter, 'the scrollbar takes width, or this test proves nothing').toBe(15)
-    await expect.poll(async () => Math.round((await page.locator('main#main').boundingBox())!.width))
-      .toBeGreaterThanOrEqual(480)
-    await browser.close()
+    /*
+     * Closed whatever happens, and a picture kept when it fails: this browser is not the
+     * suite's, so the config's `screenshot` and teardown do not reach it (round 2, ⚪).
+     */
+    try {
+      await page.addInitScript(() => {
+        localStorage.setItem('review-desk:width:sidebar', '480')
+        localStorage.setItem('review-desk:width:conversation', '720')
+      })
+      await open(page, `reviews/${reviewId}/findings`)
+      expect(await width(page, '#sidebar'), 'no scrollbar yet: 1,100 − 480 − 300').toBe(320)
+      await page.addStyleTag({ content: '::-webkit-scrollbar { width: 15px } ::-webkit-scrollbar-thumb { background: #888 }' })
+      const gutter = await page.evaluate(() => window.innerWidth - document.documentElement.clientWidth)
+      expect(gutter, 'the scrollbar takes width, or this test proves nothing').toBe(15)
+      await expect.poll(async () => Math.round((await page.locator('main#main').boundingBox())!.width))
+        .toBeGreaterThanOrEqual(480)
+    }
+    catch (error) {
+      await test.info().attach('page', { body: await page.screenshot(), contentType: 'image/png' })
+      throw error
+    }
+    finally {
+      await browser.close()
+    }
   })
 })
