@@ -78,6 +78,13 @@ async function settle(page: VueWrapper) {
   }
 }
 
+/**
+ * A test's time limit when it navigates the mounted page in-app and waits for the list to
+ * follow. The replace lands after several `settle` rounds here (DEV-1373's self-review, P6),
+ * and a CI runner took 5–6s where the default limit is 5s.
+ */
+const SLOW_ROUTE_MS = 20_000
+
 /** Mount a screen and wait for its first read. */
 async function shown(
   component: Parameters<typeof mountSuspended>[0],
@@ -3107,7 +3114,7 @@ describe('a pull request nobody has picked up', () => {
         .attributes('aria-checked')).toBe('true')
       expect(page.find('#panel-reviewing .queue-line--selected').text()).toContain('#104')
     }, { timeout: 5000 })
-  })
+  }, SLOW_ROUTE_MS)
 
   it('clears find text that hides the pull request the address asks for', async () => {
     /* Self-review round 2, F6: the first row was selected and previewed in its place. */
@@ -3120,7 +3127,7 @@ describe('a pull request nobody has picked up', () => {
       expect((page.find('input#start').element as HTMLInputElement).value).toBe('')
       expect(page.find('#panel-reviewing .queue-line--selected').text()).toContain('#104')
     }, { timeout: 5000 })
-  })
+  }, SLOW_ROUTE_MS)
 
   it('drops an ask nothing took when a tab is chosen', async () => {
     /* Self-review round 2, F4: it rode along on every tab the reader chose. */
@@ -3132,7 +3139,7 @@ describe('a pull request nobody has picked up', () => {
       expect(query.pr).toBeUndefined()
       expect(query.view).toBe('reviewing')
     }, { timeout: 5000 })
-  })
+  }, SLOW_ROUTE_MS)
 
   it('drops an ask no tab holds, so the repository filter can still be chosen', async () => {
     /*
@@ -3149,7 +3156,7 @@ describe('a pull request nobody has picked up', () => {
     await settle(page)
     expect(page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/billing-api'))!
       .attributes('aria-checked')).toBe('true')
-  })
+  }, SLOW_ROUTE_MS)
 
   it('keeps the repository filter for an ask that is not on the desk', async () => {
     const page = await shown(Inbox)
@@ -3162,7 +3169,7 @@ describe('a pull request nobody has picked up', () => {
     }, { timeout: 5000 })
     expect(page.findAll('[role="radio"]').find(one => one.text().startsWith('acme/billing-api'))!
       .attributes('aria-checked')).toBe('true')
-  })
+  }, SLOW_ROUTE_MS)
 
   it('selects the first row when the address names a pull request no tab draws', async () => {
     const page = await shown(Inbox, { route: '/?pr=acme%2Fportal%2399999' })
