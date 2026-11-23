@@ -1,22 +1,54 @@
+import { join } from 'node:path'
+
 import { expect, test } from '@playwright/test'
 
-import { readAddresses } from './harness'
+import { cli, scratch, serve, signedIn, stop, type Serving } from './harness'
 
 /*
  * **A sidebar row with no round, clicked, selects its pull request in the list.** DEV-1373.
  *
- * `acme/portal#901` is the seed's review GitHub asked for that no session has opened a round
- * of (`reviewRequestPr`, DEV-996). It has no review page, so the sidebar drew it as text and
+ * `acme/portal#901` is a review GitHub asked for that no session has opened a round of
+ * (`review requested`, DEV-996). It has no review page, so the sidebar drew it as text and
  * clicking it did nothing. It is a link now, to the Pull requests list with that row selected.
  *
  * In a browser because the click is the router's and the selection waits on the inbox read:
  * a mounted component sees neither the navigation nor the order the two arrive in.
  *
- * Read-only against the acceptance suite's seeded server, at the config's 1440 wide, where
- * the sidebar and the preview are both drawn.
+ * ## Its own database and its own server
+ *
+ * The acceptance suite's seed holds `#901` too, but the specs before this one change that
+ * desk, and by the time this one ran `#901` was no longer drawn as *Not started* there. So it
+ * seeds the two rows it needs — one round nobody is working on, one request with no round —
+ * and serves them on port 0, as `header-links.spec.ts` does.
  */
 
-const { seeded, reviewRequestPr: pr } = readAddresses()
+const PR = 901
+let serving: Serving
+let seeded: string
+
+test.beforeAll(async () => {
+  const database = join(scratch(), 'sidebar-select.db')
+  cli(database, [
+    'review', 'open', '--repo', 'acme/portal', '--pr', '902', '--head', '3c1e2a9',
+    '--title', 'Skip a scheduled export that has nothing to send',
+  ])
+  cli(database, [
+    'review', 'requested', '--repo', 'acme/portal', '--pr', String(PR),
+    '--requested-at', String(Math.floor(Date.now() / 1000) - 24 * 60 * 60),
+  ])
+  serving = await serve(database)
+  seeded = serving.url.endsWith('/') ? serving.url : `${serving.url}/`
+})
+
+test.beforeEach(async ({ context }) => {
+  await signedIn(context, serving)
+})
+
+test.afterAll(async () => {
+  if (serving) await stop(serving)
+})
+
+const pr = PR
 
 test('clicking a not-started row in the sidebar selects it in the list', async ({ page }) => {
   /* From Rules, so the click is a navigation into the list rather than within it. */
