@@ -68,12 +68,16 @@ workflow are settled; typography and styling may still move. The screens are in
 | Conversation | 380px | **Ask this review**, on every review tab. Absent on the list and on Rules |
 
 **How it is built** (DEV-1323). `web/app/layouts/default.vue` is the grid; `AppSidebar` is the
-first column. Six rules it keeps, each in the file that holds it:
+first column. Seven rules it keeps, each in the file that holds it:
 
 - **The groups are read off the record**, never worked out by the page: *Waiting on you* (which
   S1 and S2 draw first and open), *Being reviewed* and *Waiting on the author* from `GET /inbox`'s
   arrays, *Done this week* from the Reviews list's *Finished* view, one row per pull request.
   An empty group still draws, saying *None*. `sidebarGroups` in `web/app/utils/sidebar.ts`.
+- **Every row is a link** (DEV-1373). A row with a round opens its review's Overview, marked
+  `aria-current` while it is open. A pull request GitHub asked for that no round exists of has
+  no review page, so it opens the Pull requests list with that row selected (`/?pr=`, below).
+  No row is drawn as text. `SidebarRows`.
 - **The state word is chosen once**, in `web/app/utils/stateWord.ts`. The sidebar's word is the
   inbox array a pull request is in. **A review the sidebar lists takes that row's word in its own
   header** (`stateOfReview(detail, rowFor(groups, …))`), because the inbox decides from more than
@@ -109,6 +113,10 @@ first column. Six rules it keeps, each in the file that holds it:
   taking a column.
 - **A row opens its review's Overview** (`tabPath`). `J` and `K` move the selection, `Enter`
   opens it, under `keyIsForThePage`.
+- **The address can carry a selection**: `?pr=acme/portal%23901` selects that pull request,
+  in the tab that draws it when no `?view=` says which. It is how the list is reached for a
+  row with no round; it says where a reader arrived and is not rewritten as the selection
+  moves, and choosing a tab drops it. `selectionFromQuery` and `viewHolding`.
 - **The preview beside it draws the selected row from the record**: the bottom line from
   `bottomLine` in `web/app/utils/theCase.ts` — the brief's headline and `answerFacts`, and the
   one helper the Overview draws it with too — the state, the findings, what was not checked,

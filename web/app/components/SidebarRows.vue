@@ -7,15 +7,27 @@
  * context"), and nothing in the record holds a shorter title — so the sidebar draws the
  * real one and lets the line clamp shorten it, rather than inventing an abbreviation.
  *
- * **A row with no round is not a link.** A review GitHub asked for that no session has
- * opened a round of has nowhere to go yet, so it is drawn as text.
+ * **Every row is a link** (DEV-1373). A row with a round opens its review's Overview. A
+ * review GitHub asked for that no session has opened a round of has no review page, so it
+ * opens the Pull requests list with that pull request selected — `/?pr=acme/portal%23901`
+ * — where the preview says what can be done with it. It was drawn as text until then, and
+ * Patrick found the dead end: "the actual PRs I can't select".
  */
+import type { RouteLocationRaw } from 'vue-router'
+
+import { selectionQuery } from '~/utils/pullRequests'
 import type { SidebarRow } from '~/utils/sidebar'
 
 defineProps<{
   rows: SidebarRow[]
   openReviewId: number | null
 }>()
+
+function rowTo(row: SidebarRow): RouteLocationRaw {
+  return row.reviewId != null
+    ? `/reviews/${row.reviewId}`
+    : { path: '/', query: selectionQuery(row.key) }
+}
 </script>
 
 <template>
@@ -24,9 +36,8 @@ defineProps<{
       v-for="row in rows"
       :key="row.key"
     >
-      <component
-        :is="row.reviewId != null ? resolveComponent('NuxtLink') : 'div'"
-        :to="row.reviewId != null ? `/reviews/${row.reviewId}` : undefined"
+      <NuxtLink
+        :to="rowTo(row)"
         class="side-row"
         :class="{ 'side-row--open': row.reviewId != null && row.reviewId === openReviewId }"
         :aria-current="row.reviewId != null && row.reviewId === openReviewId ? 'page' : undefined"
@@ -36,7 +47,7 @@ defineProps<{
           <span class="title">{{ row.title ?? 'no title recorded' }}</span>
         </span>
         <span class="state">{{ stateWord(row.state) }}</span>
-      </component>
+      </NuxtLink>
     </li>
   </ul>
 </template>

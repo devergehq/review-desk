@@ -188,6 +188,25 @@ describe('the shell', () => {
     expect(page.find('#sidebar').text()).not.toContain('GitHub read')
   })
 
+  it('links every sidebar row, the one with no round to the list with it selected', async () => {
+    /*
+     * **DEV-1373.** A row GitHub asked for that no round exists of was a `div`, so clicking
+     * it did nothing — "the actual PRs I can't select". It has no review page; it opens the
+     * Pull requests list with that pull request selected.
+     */
+    const page = await shown(Layout)
+    const rows = page.findAll('#sidebar .side-row')
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      expect(row.element.tagName, row.text()).toBe('A')
+      expect(row.attributes('href'), row.text()).toBeTruthy()
+    }
+    const unstarted = rows.find(row => row.text().includes('#104'))!
+    expect(unstarted.text()).toContain('Not started')
+    expect(unstarted.attributes('href')).toBe('/?pr=acme/billing-api%23104')
+    expect(page.html()).not.toContain('/reviews/null')
+  })
+
   it('opens the review being read in the sidebar', async () => {
     const page = await shown(Layout, { route: '/reviews/17' })
     const open = page.find('#sidebar .side-row[aria-current="page"]')
@@ -3039,6 +3058,26 @@ describe('a pull request nobody has picked up', () => {
     /* And how long it has waited, from when GitHub asked rather than when it was told. */
     expect(row.text()).toMatch(/\d+ days? ago/)
     expect(row.text()).not.toContain('no time recorded')
+  })
+
+  it('selects the pull request the address names, in the tab that draws it', async () => {
+    /*
+     * **DEV-1373: the sidebar's way in for a row with no round.** `?pr=` names no tab, so the
+     * list opens the one that draws the row — *Being reviewed* for a request nobody started —
+     * and the preview draws it rather than the first row.
+     */
+    const page = await shown(Inbox, { route: '/?pr=acme%2Fbilling-api%23104' })
+    expect(page.find('[role="tab"][aria-selected="true"]').text()).toMatch(/^Being reviewed/)
+    const selected = page.findAll('#panel-reviewing .queue-line--selected')
+    expect(selected).toHaveLength(1)
+    expect(selected[0]!.text()).toContain('#104')
+    expect(page.find('[data-testid="list-preview"]').attributes('aria-label')).toBe('#104, previewed')
+  })
+
+  it('selects the first row when the address names a pull request no tab draws', async () => {
+    const page = await shown(Inbox, { route: '/?pr=acme%2Fportal%2399999' })
+    expect(page.find('[role="tab"][aria-selected="true"]').text()).toMatch(/^Waiting on you/)
+    expect(page.findAll('#panel-waiting .queue-line--selected')).toHaveLength(1)
   })
 
   it('draws no second row for a pull request another group already holds', async () => {

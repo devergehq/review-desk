@@ -1395,11 +1395,28 @@ const doneRows = computed(() => {
  */
 const route = useRoute()
 const router = useRouter()
+
+/** The pull request the address asks to have selected (`?pr=`, DEV-1373), or null. */
+const askedPr = computed(() => selectionFromQuery(route.query.pr))
+
+/*
+ * **An address that names a pull request and no tab opens the tab that draws it**, so the
+ * sidebar can link a row with no round as `/?pr=…` without knowing which tab is whose.
+ * Choosing a tab drops the `pr`: it was where the reader arrived, and keeping it would send
+ * *Waiting on you*, whose address carries no `view`, straight back to the asked-for tab.
+ */
 const view = computed<ListView>({
-  get: () => viewFromQuery(route.query.view),
+  get: () => {
+    if (route.query.view == null && askedPr.value) {
+      return viewHolding(viewRows.value, askedPr.value) ?? 'waiting'
+    }
+    return viewFromQuery(route.query.view)
+  },
   set: (next) => {
     if (next === view.value) return
-    void router.push({ query: { ...route.query, view: next === 'waiting' ? undefined : next } })
+    void router.push({
+      query: { ...route.query, view: next === 'waiting' ? undefined : next, pr: undefined },
+    })
   },
 })
 
@@ -1408,10 +1425,8 @@ const view = computed<ListView>({
  * every visit to the list: it is a read of its own (`GET /reviews`) and most visits never
  * open it.
  */
-const everyOpened = ref(view.value === 'every')
-watch(view, (next) => {
-  if (next === 'every') everyOpened.value = true
-})
+/* The address's own `view`, not `view`: a tab found from `?pr=` is never this one (`viewHolding`). */
+const everyOpened = ref(viewFromQuery(route.query.view) === 'every')
 
 /** The rows *Every review* reports, which it draws and reads itself. */
 const everyRows = ref<ListRow[]>([])
@@ -1538,6 +1553,11 @@ const viewRows = computed<Record<ListView, ListRow[]>>(() => ({
   every: everyRows.value.filter(row => rowMatches(row, find.value)),
 }))
 
+/* Below `viewRows`, because a watch reads `view` at once and `view` reads the rows for `?pr=`. */
+watch(view, (next) => {
+  if (next === 'every') everyOpened.value = true
+})
+
 /** How many rows each tab draws, which is the number beside its name. */
 const viewCount = (which: ListView) => viewRows.value[which].length
 
@@ -1563,10 +1583,18 @@ const currentRows = computed(() => viewRows.value[view.value])
  * change of tab, and when the find field narrows the selected row away. S1 draws the
  * preview with the first row in it; an empty pane beside a full list would be a pane that
  * says nothing until a reader learns to press something.
+ *
+ * **Unless the address asks for one** (`?pr=`, DEV-1373): then that row, once the tab draws
+ * it — which on a fresh load is after the inbox answers, not before.
  */
 watch(currentRows, (list) => {
-  if (!list.some(row => row.key === selected.value)) selected.value = list[0]?.key ?? null
+  selected.value = selectionOn(list, selected.value, askedPr.value)
 }, { immediate: true })
+
+/* And a new ask while the list is already open: the sidebar linking from the list itself. */
+watch(askedPr, (asked) => {
+  if (asked && currentRows.value.some(row => row.key === asked)) selected.value = asked
+})
 
 const selectedRow = computed(() =>
   currentRows.value.find(row => row.key === selected.value) ?? null)

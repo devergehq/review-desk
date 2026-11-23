@@ -70,6 +70,48 @@ export function viewFromQuery(value: unknown): ListView {
 }
 
 /**
+ * **The selection an address carries, in `?pr=`: a row's `repo#pr`.** DEV-1373.
+ *
+ * The sidebar's way into the list for a pull request with no round, which has no review page
+ * to open: `/?pr=acme/portal%23901` is the list with that row selected and its preview
+ * drawn. An arrival instruction rather than a mirror of the selection — `J`, `K` and the
+ * pointer move the selection without writing it back, so the address is not rewritten under
+ * a reader walking the list.
+ */
+export function selectionQuery(key: string): { pr: string } {
+  return { pr: key }
+}
+
+/** The `repo#pr` an address asks to have selected, or null when it asks for none. */
+export function selectionFromQuery(value: unknown): string | null {
+  const asked = Array.isArray(value) ? value[0] : value
+  return typeof asked === 'string' && asked.includes('#') ? asked : null
+}
+
+/**
+ * The tab that draws a pull request, for an address that names one and no tab.
+ *
+ * **The first tab in S1's order that holds the row**, so a link needs to know only which pull
+ * request it means — the sidebar's groups and the tabs are one set of rows, and a pull request
+ * is in one of them. *Every review* is never the answer: it is read only once opened, and
+ * every row in a group is also in one of the tabs before it. Null while no tab holds it, which
+ * includes before the inbox has answered.
+ */
+export function viewHolding(rows: Readonly<Record<ListView, readonly ListRow[]>>, key: string): ListView | null {
+  return LIST_VIEWS.find(one => one.view !== 'every' && rows[one.view].some(row => row.key === key))?.view ?? null
+}
+
+/**
+ * The row to select when the open tab's rows change: the current one while it is drawn, else
+ * the one the address asks for when that is drawn, else the first.
+ */
+export function selectionOn(rows: readonly ListRow[], current: string | null, asked: string | null): string | null {
+  if (current && rows.some(row => row.key === current)) return current
+  if (asked && rows.some(row => row.key === asked)) return asked
+  return rows[0]?.key ?? null
+}
+
+/**
  * The row `J` or `K` moves to: the next or previous, stopping at either end.
  *
  * **Stopping, not wrapping.** A key held down at the last row should stay there rather than
