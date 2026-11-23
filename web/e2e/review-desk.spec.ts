@@ -1808,13 +1808,13 @@ test.describe('the case for one review, in three bands', () => {
     })
 
     /**
-     * **The bench uses the window; every other screen keeps the shell.**
+     * **The bench is never narrower than a document, and its prose stops at its measure.**
      *
-     * Patrick, 16 October 2026. Only a browser can check it: the shell's width is a
-     * stylesheet fact about a layout, and jsdom computes none. What is asserted is the
-     * whole of the rule — the page is wider, it is capped, the pages either side of it are
-     * not, and the prose inside it did not grow with the window, which is the half that
-     * makes "contained" mean anything.
+     * Patrick, 16 October 2026, and since 23 November (DEV-1372) every page has the whole
+     * main column, so there is no cap left to assert here — `shell.spec.ts` measures the
+     * main column's width at every width the shell is drawn at. Only a browser can check
+     * what remains: the prose inside the bench did not grow with the window, which is the
+     * half of the rule that makes "full width" readable.
      */
     test(`the bench is never narrower than a document, and its prose is capped, at ${label}`, async ({
       page,
@@ -1836,21 +1836,11 @@ test.describe('the case for one review, in three bands', () => {
       const shell = await page.locator('#main').evaluate(el => el.clientWidth)
 
       /*
-       * **Under the shell (DEV-1323) a review's page is the main column**, beside a 232px
-       * sidebar and the 380px conversation column, so it is narrower than the 1,240 cap at
-       * every width the shell allows: 988px at the 1,600 cap. The bench and the pages either
-       * side of it are then the same width, and "wider" is not something a review's page
-       * can be until the main column outgrows the cap. What still holds, and is asserted:
-       * the bench is never narrower, a document never passes the cap, and the prose stops
-       * at its measure. **On a review's page the two are equal by construction** — both are
-       * the main column's track — so the first of these is a guard against a regression,
-       * not a measurement of the split; `docs/design.md`, *Two kinds of screen*, records the
-       * split as unobservable on a review's page until the main column outgrows 1,240.
+       * **On a review's page the bench and the pages either side of it are the main column**,
+       * beside a 232px sidebar and the 380px conversation column, so they are equal by
+       * construction: this is a guard against a regression, not a measurement of a split.
        */
       expect(bench, 'the bench is never narrower than a document').toBeGreaterThanOrEqual(shell)
-      expect(bench, 'and stops at the cap').toBeLessThanOrEqual(1600)
-      expect(shell, 'the pages either side of it keep the shell')
-        .toBeLessThanOrEqual(1240)
       /*
        * **The prose stops at its own measure, `--rd-measure-recorded`, read as the browser
        * resolved it.** 70ch was 699px in the serif-era face and is 746px in the S scale's sans

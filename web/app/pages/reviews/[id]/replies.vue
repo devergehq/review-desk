@@ -1074,7 +1074,9 @@ function said(row: ReplyRow): string {
   min-width: 0;
 }
 
+/* The row fills the band and its line stops at the recorded measure (DEV-1372). */
 .cell--line {
+  max-width: var(--rd-measure-recorded);
   overflow-wrap: break-word;
 }
 

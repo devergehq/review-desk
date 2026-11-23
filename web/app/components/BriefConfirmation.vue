@@ -174,7 +174,7 @@ async function confirm() {
       pad="tight"
       class="settled waived"
     >
-      <span class="rd-note">
+      <span class="rd-note rd-measure">
         <strong>Confirmation not required.</strong>
         A session recorded this brief as needing none, so nothing here is waiting on you.
         You can still read the problem below, and you can still send the draft back.

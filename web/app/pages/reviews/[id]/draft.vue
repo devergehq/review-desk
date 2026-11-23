@@ -26,14 +26,6 @@ import { baseOnlyLine, commitLabel, nothingMoved, updatedLine, withdrawnLine } f
  *
  * So the review is the resource `DeskState` renders and the draft is read beside it.
  */
-/*
- * **Three panes, so the page is wider than the rest of the app.** Patrick, 16 October 2026,
- * ruling on the code review bench and on this: the workbench screens leave the 1,240px
- * shell for the window, capped at 1,600px. What grows is the outline and the preview; the
- * body's own prose keeps the measure `MarkdownView` sets for it.
- */
-definePageMeta({ wide: true })
-
 const route = useRoute()
 const desk = useReviewDesk()
 

@@ -93,7 +93,7 @@ first column. Six rules it keeps, each in the file that holds it:
   700 and 1,100px it sits under the page, at the main column's width. Under 700px the shell is
   one column: the sidebar behind a menu button that closes on Escape, the sample-data marker
   in the bar, and the conversation a bottom sheet behind the bar's *Ask* (S14, DEV-1336, below).
-  `web/e2e/shell.spec.ts` measures all of it at 1,600, 1,280, 1,024 and 390.
+  `web/e2e/shell.spec.ts` measures all of it at 2,560, 1,920, 1,600, 1,280, 1,024 and 390.
 
 **Queue and Reviews are one list, Pull requests** (DEV-1325, S1 and S17), at `/`:
 
@@ -210,20 +210,36 @@ and never re-checking it. Each rule is in the file named:
 
 ## Two kinds of screen
 
-**A screen is a document or a workbench, and the difference decides its width.** Under the
-shell this still holds for the *main* column: Findings and Draft are workbenches, the rest are
-documents, and the shell itself is capped at `--rd-shell-wide`.
+**A screen is a document or a workbench, and the difference is in what it draws, not how wide
+it is.** Patrick, 23 November 2026 (DEV-1372):
 
-| Screen | Kind | Width |
+> "It's not full screen… this is almost entirely never going to be used on a mobile device,
+> it's always going to be used on desktop. Happy for it to be somewhat responsive… it needs to
+> be fixed."
+
+**Desktop is the target, and Review Desk uses the whole window.** The shell has no outer cap and
+is not centred: the sidebar is against the window's left edge, the conversation against its
+right on a review's pages, and the main column takes everything between them, on every page.
+This replaces the two caps the section used to set — 1,600px around the shell
+(`--rd-shell-wide`, 16 October 2026) and 1,240px around a document's main column
+(`--rd-shell-max`) — and both tokens are gone from `tokens.css`.
+
+| Width | Shell | Main column |
 | -- | -- | -- |
-| Rules, one review, the case, What happened | Document | The main column, capped at `--rd-shell-max`, 1,240px |
-| Pull requests | List beside its preview | All of the main column (`split: true`): the rows take what the 380px preview leaves, the shell is capped at `--rd-shell-wide` |
-| Code review, Draft | Workbench | All of the main column; the shell around it is capped at `--rd-shell-wide`, 1,600px |
+| ≥1,100 | Sidebar 232px at the left edge; conversation 380px at the right edge on a review's pages; no cap, no centring | Everything between them, on every page: 1,308px at 1,920 on a review, 2,328px at 2,560 on Rules |
+| 700–1,099 | The conversation sits under the page | Full width |
+| <700 | One column, the sidebar behind the menu, the conversation a bottom sheet (DEV-1336) | Full width |
 
-**On a review's page the split is not observable under the shell**: beside the 232px sidebar and
-the 380px conversation column the main column is under the 1,240 cap at every width (988px at the
-1,600 cap), so Code review and Draft draw at the same width as the case. It returns when the
-main column outgrows the cap — the list, or a review once the conversation column can fold.
+| Screen | Kind | What fills the width |
+| -- | -- | -- |
+| Rules, one review, the case, What happened | Document | The bands — cards, tables, grids and rules. The paragraphs in them stop at their measure, left-aligned in the band |
+| Pull requests | List beside its preview | The rows take what the 380px preview leaves (`split: true`), and the preview meets the window's edge |
+| Code review, Draft | Workbench | The columns, divided in fractions by container queries on the page's own width |
+
+`web/e2e/shell.spec.ts` measures every page against this at 2,560, 1,920, 1,600 and 1,280: the
+sidebar at x = 0, the conversation's and the preview's right edges at the window's, the main
+column's width, a workbench's two columns, and no paragraph on a document's page whose text
+runs wider than its measure.
 
 A document is read down. A workbench is worked across: a dense list on the left, the one
 thing selected drawn in full on the right, and a key for every decision. The developer
@@ -232,12 +248,10 @@ of the bench is that **Ticket and Set aside become as easy as Post**.
 
 ### Full width, and prose that does not grow with it
 
-A page asks for the whole main column itself, with `definePageMeta({ wide: true })`; the layout
-reads `route.meta.wide` (`web/app/layouts/default.vue`). **Asked for by the page rather than
-set into a store, so a page that is wide is wide from its first frame** and nothing resizes
-under the reader.
-
-The cap is what keeps "full width" contained. The second half of that is the measure:
+**Every page has the whole main column**, so there is nothing for a page to ask for: the
+`definePageMeta({ wide: true })` Code review and Draft used to set went with the caps it lifted
+them out of. **The width is contained by the measure, not by the shell.** That was always the
+half of the old rule that did the work, and it is the half that stays:
 
 > **Prose is capped by its own rule, never by the grid track it sits in.**
 
@@ -249,8 +263,16 @@ about 700px, so at a 1,440px window the fields took 699 of the 948 going, the co
 the paragraphs cap themselves. Enforced by `.columns` in
 `web/app/pages/reviews/[id]/findings.vue`.
 
+**A paragraph in a band that fills carries its own cap.** With the main column uncapped, a
+`<p>` that leaned on the old 1,240 for its line length runs the band's width instead, so it takes
+`--rd-measure` itself: `DeskNotice` (a notice ran 1,638px on What happened at 2,560) and the
+answer lines of Overview's *What you'd be asked* (1,074px). A row of a key and a title, or a line
+of figures, is a `<p>` too, but its box filling the band is the band filling — what is held to
+the measure is how far the words run. The review header keeps its own caps at every width: the
+title at 940px, the lead line at 800px.
+
 **Under the shell, a workbench measures its own column, not the window** (DEV-1328). At a
-1,600px window the main column beside the conversation is about 920px, so a rule keyed on the
+1,600px window the main column beside the conversation is 988px, so a rule keyed on the
 viewport would put two columns into room for one. Findings' bench and its `.columns` are
 container queries: the list and the finding sit side by side from 720px of their container (1,440 is 748; 1,280 stacks), and
 the fields sit beside the hunk only from 760px of the finding's own pane — which, with the
@@ -506,7 +528,7 @@ Neither of these is a decision against; both are waiting on real use.
 | 15 Oct 2026 | Sharpen app-wide; Workbench on Code review and Draft; not Triage, not Margin notes | This file's directions table |
 | 16 Oct 2026 | A page folds or reorders what posts; it never removes any of it | `foldOpenIndex`, `earlierSummary`, the case bands |
 | 16 Oct 2026 | Each key is its button's first letter; the buttons are the three lists | `FindingCall.vue`, `keys.ts` |
-| 16 Oct 2026 | The workbench screens use the window, capped at 1,600px | `--rd-shell-wide`, `definePageMeta({ wide: true })` |
+| 16 Oct 2026 | The workbench screens use the window, capped at 1,600px — superseded 23 Nov 2026 | `--rd-shell-wide`, `definePageMeta({ wide: true })`, both since removed |
 | 16 Oct 2026 | "Cut" becomes "Set aside"; "Kept" becomes "Posted"; "Rewrote" becomes "Edited" | `format.ts` |
 | 16 Oct 2026 | The three steps are one page, opening with a derived answer line | `theCase.ts` |
 | 16 Oct 2026 | One title face in a list; a status cell is one line of facts | `tokens.css`, `format.ts` |
@@ -519,4 +541,5 @@ Neither of these is a decision against; both are waiting on real use.
 | 21 Nov 2026 | A suggestion is accepted through the page's own control and stays the developer's decision; `prompted_by` names the reply | *Ask this review*; `accepting`, `addFinding` |
 | 21 Nov 2026 | Queue and Reviews are one Pull requests list with a preview; the bottom line is one helper | *The application shell*; `pages/index.vue`, `bottomLine` |
 | 21 Nov 2026 | Overview is three pages chosen from the record; outcomes are grouped once, each with its basis | `overview.ts`, `sinceYouPosted` |
+| 23 Nov 2026 | Desktop is the target: the shell fills the window, every page has the whole main column, and prose stops at its measure | *Two kinds of screen*; `default.vue`, `shell.spec.ts` |
 | 15 Nov 2026 | Review Desk never starts, resumes or drives Claude itself; without Allele the conversation is one way | *The application shell*; S11 |

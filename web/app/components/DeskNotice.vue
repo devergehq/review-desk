@@ -22,9 +22,14 @@ defineProps<{ tone?: 'plain' | 'problem' | 'blocked' }>()
 </template>
 
 <style scoped>
+/*
+ * **A notice is a sentence, so it stops at the measure** (DEV-1372): with no cap on the main
+ * column, one on Replies ran 1,638px at a 2,560 window.
+ */
 .notice {
   margin: 0;
   font-size: 13px;
+  max-width: var(--rd-measure);
 }
 
 .notice--plain {

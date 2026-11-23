@@ -526,14 +526,20 @@ const MARK_WORDS: Record<QuestionMark, string> = {
   color: var(--rd-ink);
 }
 
+/*
+ * **The row fills the band and its words stop at the measure** (DEV-1372): with no cap on the
+ * main column, an answer ran 1,074px at a 2,560 window.
+ */
 .row-says {
   margin: 2px 0 0;
+  max-width: var(--rd-measure);
   font-size: var(--rd-type-body);
   color: var(--rd-ink-dim);
 }
 
 .basis {
   margin: 2px 0 0;
+  max-width: var(--rd-measure);
   font-size: var(--rd-type-meta);
   color: var(--rd-ink-muted);
 }
